@@ -1,0 +1,286 @@
+# Centinela 🛡️
+
+**Sistema de detección de fraude transaccional en tiempo real para el sector Fintech.**
+
+![Java](https://img.shields.io/badge/Java-21-orange)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen)
+![React](https://img.shields.io/badge/React-18.x-61DAFB)
+![Azure](https://img.shields.io/badge/Cloud-Azure-0078D4)
+![Status](https://img.shields.io/badge/Estado-En%20desarrollo-yellow)
+
+Proyecto integrador · 3 semanas · Trabajo por células
+
+---
+
+## 📑 Tabla de contenidos
+
+1. [¿Por qué existe Centinela?](#1-por-qué-existe-centinela)
+2. [¿Qué es Centinela?](#2-qué-es-centinela)
+3. [Propósito del proyecto](#3-propósito-del-proyecto)
+4. [Motor de detección: cómo funciona](#4-motor-de-detección-cómo-funciona)
+5. [Arquitectura del sistema](#5-arquitectura-del-sistema)
+6. [Recorrido de una transacción](#6-recorrido-de-una-transacción)
+7. [Actores del sistema](#7-actores-del-sistema)
+8. [Dónde vive cada dato](#8-dónde-vive-cada-dato)
+9. [Estructura del repositorio](#9-estructura-del-repositorio)
+10. [Stack tecnológico](#10-stack-tecnológico)
+11. [Requisitos previos](#11-requisitos-previos)
+12. [Guía de ejecución](#12-guía-de-ejecución)
+13. [Variables de entorno y secretos](#13-variables-de-entorno-y-secretos)
+14. [Matriz de roles y accesos](#14-matriz-de-roles-y-accesos)
+15. [Documentación adicional](#15-documentación-adicional)
+16. [Reglas del juego / principios de diseño](#16-reglas-del-juego--principios-de-diseño)
+17. [Roadmap](#17-roadmap)
+18. [Licencia](#18-licencia)
+
+---
+
+## 1. ¿Por qué existe Centinela?
+
+El sector financiero enfrenta el desafío constante de proteger las transacciones de sus usuarios sin sacrificar la experiencia de usuario. La mayoría de los sistemas actuales sufren de latencias elevadas o falsos positivos que frustran a los clientes. **Centinela** nace como una solución robusta para identificar comportamientos sospechosos mediante reglas heurísticas y un pipeline asíncrono, garantizando seguridad sin afectar la velocidad de respuesta del cliente.
+
+## 2. ¿Qué es Centinela?
+
+Centinela es un sistema que vigila el flujo de transacciones financieras de una fintech y detecta, en tiempo real, cuáles son potencialmente fraudulentas.
+
+Cada vez que un cliente hace una compra, transferencia o retiro, la transacción entra a Centinela. El sistema la analiza contra un conjunto de reglas de riesgo, calcula un puntaje (*score*) y decide en cuestión de milisegundos:
+
+- **Score bajo** → la transacción sigue su curso normal. El cliente ni se entera.
+- **Score alto** → la transacción se marca, se abre un caso de fraude y un analista humano lo revisa con toda la evidencia en la mano.
+
+El producto final es la plataforma completa: la API que recibe transacciones, el motor que las puntúa, el sistema de gestión de casos para los analistas, y toda la infraestructura en la nube que lo sostiene.
+
+## 3. Propósito del proyecto
+
+El objetivo principal de Centinela es automatizar la detección de fraude siguiendo tres pilares críticos:
+
+* **Seguridad:** implementación de un modelo *Zero-Trust* utilizando identidades gestionadas y almacenamiento privado para evitar la exposición a internet.
+* **Escalabilidad:** arquitectura basada en mensajería capaz de absorber picos de tráfico financieros.
+* **Auditabilidad:** cada decisión tomada por el sistema es explicable y trazable, permitiendo a los equipos de auditoría y analistas de fraude tener una visión completa del ciclo de vida de cada caso.
+
+Detectar fraude con reglas no es lo difícil; lo difícil es sostener ese análisis bajo restricciones reales:
+
+- **El cliente no puede esperar.** La respuesta debe ser inmediata; la transacción nunca se queda colgada esperando cálculos pesados.
+- **El volumen no es constante.** El sistema debe absorber picos de tráfico (ej. viernes en la noche) sin perder datos ni degradarse.
+- **El sistema no se puede caer.** Si Centinela deja de responder, la fintech deja de operar.
+
+## 4. Motor de detección: cómo funciona
+
+La detección se basa en **reglas heurísticas**, no en Machine Learning: cada regla es lógica explícita, explicable y auditable. Cada regla que se dispara suma puntos al score total de la transacción.
+
+### Reglas base
+
+| # | Regla | Descripción |
+|---|---|---|
+| 1 | **Velocidad de transacción** | Demasiadas transacciones desde la misma cuenta en una ventana corta de tiempo (ej. 8 compras en 3 minutos). |
+| 2 | **Monto atípico** | El monto está muy por encima del comportamiento histórico de la cuenta. |
+| 3 | **Ubicación geográficamente imposible** | Dos transacciones de la misma cuenta desde ubicaciones que no se pueden recorrer en el tiempo transcurrido entre ellas. |
+| 4 | **Comercio o categoría de riesgo** | La transacción va hacia un comercio o categoría previamente marcada como sospechosa. |
+
+### Scoring y umbral
+
+Cada regla disparada suma puntos. La suma total es el score de la transacción. Si el score supera un **umbral configurable** (no un valor quemado en código), la transacción se marca y se abre un caso. El valor del umbral es una decisión de diseño que debe justificarse: muy bajo genera falsos positivos y satura a los analistas; muy alto deja pasar fraude real.
+
+> **Umbral actual:** `[completar, ej. 70 puntos]` — justificación: `[completar]`
+
+### Rol de la IA
+
+En este proyecto **la IA no detecta el fraude** — eso lo hacen las reglas heurísticas. La IA cumple dos funciones puntuales:
+
+- **Explicabilidad:** cuando una transacción se marca, un servicio de IA redacta en lenguaje natural la razón de la marca, para que el analista entienda el caso sin leer código ni logs.
+- **Verificación de identidad:** cuando un analista escala un caso, sube un documento del titular (cédula, extracto bancario) y un servicio de IA extrae automáticamente sus datos para verificarlos.
+
+## 5. Arquitectura del sistema
+
+El proyecto está construido bajo un enfoque modular para facilitar el mantenimiento y la escalabilidad:
+
+* **Backend:** API de alta disponibilidad desarrollada en **Java 21 con Spring Boot**, encargada de la ingesta y validación de transacciones.
+* **Motor de scoring:** componente serverless (`[completar, ej. Azure Functions]`) que reacciona a eventos, consulta historial y aplica las reglas.
+* **Frontend:** dashboard interactivo en **React**, diseñado para que los analistas de fraude gestionen casos y verifiquen documentos.
+* **Mensajería:** `[completar, ej. Azure Service Bus / Event Hubs]`, encargada de desacoplar la ingesta del análisis y absorber picos de tráfico.
+* **Infraestructura:** desplegada en **Azure** mediante *Infraestructura como Código (IaC)*, asegurando que el entorno sea reproducible y auditable.
+
+```mermaid
+flowchart LR
+    A[Cliente] -->|Transacción| B[API - Spring Boot]
+    B -->|Acuse inmediato| A
+    B -->|Publica evento| C[(Mensajería)]
+    C --> D[Motor de Scoring - Serverless]
+    D -->|Consulta historial| E[(Almacén de transacciones)]
+    D -->|Score > umbral| F[(BD de casos)]
+    F --> G[Dashboard - React]
+    D -->|Genera explicación| H[Servicio de IA]
+    H --> F
+    G -->|Sube documentos| I[(Almacén de objetos)]
+    I --> H
+```
+
+## 6. Recorrido de una transacción
+
+Este es el camino que hace una transacción desde que entra hasta que un analista la ve:
+
+1. **Ingesta.** La API recibe la transacción y responde de inmediato con un acuse. No espera al análisis.
+2. **Publicación del evento.** La transacción se publica como un evento en el sistema de mensajería. Aquí termina la responsabilidad de la API.
+3. **Scoring.** Un componente serverless reacciona al evento, consulta el historial reciente de esa cuenta, aplica las reglas y calcula el score.
+4. **Decisión.** Si el score supera el umbral, se encola un caso de fraude. Si no, la transacción simplemente queda registrada.
+5. **Apertura del caso.** El caso se crea en la base de datos de gestión, listo para ser asignado a un analista.
+6. **Explicación.** Se genera la explicación en lenguaje natural del porqué de la marca.
+7. **Resolución.** El analista revisa, decide y cierra el caso. Todo queda auditado.
+
+> **Punto crítico:** entre el paso 1 y el paso 7 pueden pasar segundos, pero el cliente ya recibió su respuesta en el paso 1. Si la arquitectura hace que el cliente espere por el paso 6, está mal diseñada.
+
+## 7. Actores del sistema
+
+| Rol | Qué hace |
+|---|---|
+| **Cliente** | No interactúa con Centinela directamente. Solo origina transacciones que entran al sistema. |
+| **Analista de fraude** | Revisa los casos marcados, ve la evidencia y la explicación generada, y resuelve: confirma el fraude o lo descarta como falso positivo. Puede escalar un caso subiendo documentos de verificación. |
+| **Administrador** | Configura las reglas, ajusta el umbral de scoring, gestiona comercios de riesgo y administra usuarios. |
+| **Auditor** | Puede consultar la información y la trazabilidad del sistema, pero no puede modificar configuraciones, reglas, casos, usuarios ni recursos. |
+| **Servicio** | Identidad que usan los componentes internos del sistema para hablar entre sí. Tiene únicamente los permisos que necesita para operar el pipeline, nada más. |
+
+## 8. Dónde vive cada dato
+
+El sistema maneja tres tipos de información con necesidades distintas:
+
+| Tipo de dato | Necesidad | Almacén elegido | Justificación |
+|---|---|---|---|
+| **Transacciones y scores** | Alto volumen, baja latencia, consulta dominante: "transacciones recientes de esta cuenta" | `[completar, ej. Azure Cosmos DB / Table Storage]` | `[completar: cómo se particiona la clave y por qué]` |
+| **Casos de fraude** | Relacional, transaccional (caso ↔ analista ↔ resolución ↔ auditoría), integridad ACID | `[completar, ej. Azure SQL Database]` | `[completar]` |
+| **Documentos de verificación** | Archivos binarios (PDFs, imágenes) subidos por analistas | `[completar, ej. Azure Blob Storage]` | `[completar]` |
+
+## 9. Estructura del repositorio
+
+```text
+centinela/                      <-- Carpeta raíz del repositorio
+├── backend/                    <-- Lógica de negocio y motor de scoring (Java)
+│   ├── .mvn/                   <-- Wrapper de Maven
+│   ├── src/                    <-- Código fuente Java
+│   ├── pom.xml                 <-- Dependencias del proyecto
+│   ├── mvnw                    <-- Script de ejecución Maven
+│   └── ...
+├── frontend/                   <-- Interfaz de usuario (React)
+│   ├── src/                    <-- Componentes y lógica UI
+│   ├── package.json            <-- Dependencias de Node.js
+│   └── ...
+├── infra/                      <-- Scripts de automatización e IaC
+│   └── deploy.sh                <-- Script principal de despliegue Azure
+└── docs/                        <-- Documentación de cada semana y contratos de eventos
+```
+
+## 10. Stack tecnológico
+
+| Capa | Tecnología |
+|---|---|
+| Backend | Java 21, Spring Boot |
+| Frontend | React |
+| Mensajería | `[completar]` |
+| Cómputo serverless | `[completar]` |
+| Base de datos transaccional | `[completar]` |
+| Base de datos de casos | `[completar]` |
+| Almacenamiento de objetos | `[completar]` |
+| IA / Explicabilidad | `[completar]` |
+| Infraestructura | Azure + IaC (`[completar: Bicep / Terraform / ARM]`) |
+| Gestión de secretos | `[completar, ej. Azure Key Vault]` |
+
+## 11. Requisitos previos
+
+- [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) instalado.
+- Cuenta de Azure activa con permisos de suscripción.
+- Java 21 y Maven (para correr el backend localmente).
+- Node.js `[versión]` y npm/yarn (para correr el frontend localmente).
+- `[completar cualquier otra herramienta: Docker, Azure Functions Core Tools, etc.]`
+
+## 12. Guía de ejecución
+
+Este proyecto utiliza automatización para eliminar el error humano.
+
+### Despliegue de infraestructura
+
+1. Clona este repositorio.
+2. Inicia sesión en Azure:
+   ```bash
+   az login
+   ```
+3. Navega a la carpeta de infraestructura:
+   ```bash
+   cd infra
+   ```
+4. Ejecuta el script de despliegue automatizado:
+   ```bash
+   chmod +x deploy.sh
+   ./deploy.sh
+   ```
+
+### Ejecución local (desarrollo)
+
+```bash
+# Backend
+cd backend
+./mvnw spring-boot:run
+
+# Frontend
+cd frontend
+npm install
+npm run dev
+```
+
+## 13. Variables de entorno y secretos
+
+Ningún secreto vive en el código. Cadenas de conexión, claves de API y credenciales se gestionan a través de `[completar, ej. Azure Key Vault]`. Un secreto en un commit se considera un secreto comprometido, aunque después se borre.
+
+Variables esperadas (ejemplo, ajustar a la implementación real):
+
+```env
+AZURE_SUBSCRIPTION_ID=
+SERVICE_BUS_CONNECTION_STRING=   # o el nombre real del recurso de mensajería
+DATABASE_CONNECTION_STRING=
+BLOB_STORAGE_CONNECTION_STRING=
+AI_SERVICE_ENDPOINT=
+AI_SERVICE_KEY=
+```
+
+## 14. Matriz de roles y accesos
+
+Para cumplir con el principio de menor privilegio, el sistema gestiona cuatro roles definidos:
+
+| Rol | Permisos | Responsabilidad |
+|---|---|---|
+| **Administrador** | Contributor | Configuración, reglas y despliegue del sistema. |
+| **Analista** | Reader | Gestión de casos de fraude y verificación de identidad. |
+| **Auditor** | Reader | Acceso de solo lectura para auditorías y trazabilidad. |
+| **Servicio** | Managed Identity | Identidad para comunicación segura entre componentes. |
+
+## 15. Documentación adicional
+
+El proyecto se desarrolla en tres semanas, cada una con su propio documento de alcance:
+
+- **Semana 1 — Fundamentos:** infraestructura, identidad, red, almacenamiento y puerta de entrada. La API recibe, valida y almacena transacciones; queda operativa la carga de documentos y la cola del pipeline.
+- **Semana 2 — El motor:** pipeline serverless de scoring y almacenes de datos. Una transacción que entra se puntúa automáticamente y abre un caso si corresponde. `[Ver /docs/semana-2.md]`
+- **Semana 3 — Producción:** automatización del despliegue, integración de los servicios de IA y observabilidad. `[Ver /docs/semana-3.md]`
+
+- 📄 [Contrato de eventos](./docs/contrato-eventos.md) `[completar / crear]`
+- 📄 [Decisiones de arquitectura (ADR)](./docs/adr/) `[completar / crear]`
+
+## 16. Reglas del juego / principios de diseño
+
+- **El lenguaje es libre**, siempre que el contrato de eventos y payloads que cruzan el pipeline esté definido y documentado desde el inicio.
+- **La infraestructura se crea por script, no a mano.** Debe poder recrearse desde cero ejecutando un script versionado en el repositorio.
+- **Ningún secreto vive en el código.** Todo va en un gestor de secretos.
+- **Todo se justifica.** No se evalúa que se haya usado un servicio, sino por qué se usó y qué costó (rendimiento, complejidad, dinero).
+
+## 17. Roadmap
+
+- [ ] Semana 1 — Fundamentos e ingesta
+- [ ] Semana 2 — Motor de scoring y persistencia
+- [ ] Semana 3 — IA, observabilidad y despliegue automatizado end-to-end
+
+## 18. Licencia
+
+`[completar, ej. MIT License — ver LICENSE]`
+
+---
+
+# Centinela
+# Centinela
+# Centinela
