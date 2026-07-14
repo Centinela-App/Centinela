@@ -1,0 +1,113 @@
+# ADR — Decisiones de arquitectura (documento vivo)
+
+Este es el **documento de decisiones de arquitectura** que exige el enunciado (`0_Vision/2_Alcance_Semana1.md`, entregable 7). Se empieza en Semana 1 y se mantiene vivo durante las tres semanas. Cada decisión registra: contexto, decisión, alternativas y consecuencias.
+
+Para Semana 1 el enunciado pide registrar explícitamente:
+1. Clasificación de cada componente según su **modelo de servicio en la nube** y por qué.
+2. Por qué se diseñó la red así.
+3. Qué permisos recibió el rol **Servicio** y por qué cada uno es necesario.
+
+Este documento responde a los tres puntos, más las decisiones transversales de la semana.
+
+---
+
+## ADR-001 — Clasificación de componentes por modelo de servicio en la nube
+
+**Contexto.** El enunciado exige clasificar cada componente como IaaS, PaaS o SaaS y justificarlo, porque de esa clasificación depende cuánta administración asume la célula y cuánta la plataforma.
+
+**Decisión.**
+
+| Componente | Modelo | Qué administra la célula | Qué administra Azure | Por qué se eligió |
+|---|---|---|---|---|
+| **App Service (Web App + slot `staging`)** | **PaaS** | El artefacto Java y su configuración | SO, runtime, parches, balanceador, escalado | El cómputo como PaaS elimina administrar VMs y da HA/escala horizontal "de fábrica". Menor costo operativo y menor superficie de ataque. |
+| **Blob Storage** | **PaaS (almacenamiento gestionado)** | Contenedores, rutas, datos | Discos, replicación, disponibilidad | Persistencia de objetos administrada; se consume por SDK + Managed Identity, sin operar infraestructura. |
+| **Queue Storage** | **PaaS (mensajería gestionada)** | La cola y su mensaje de prueba | Infraestructura de cola | Buffer de ingesta preparado sin operar un broker propio. Sin consumidor en Semana 1. |
+| **Microsoft Entra ID** | **SaaS (identidad gestionada)** | App roles y asignaciones | Todo el servicio de directorio y emisión de tokens | Identidad y autenticación como servicio; no se opera infraestructura de identidad. |
+| **Managed Identity** | **PaaS (capacidad de identidad)** | La asignación de roles de datos | Ciclo de vida de la credencial | Permite acceso a datos **sin secretos** en código ni repositorio. |
+| **VNet + Subredes + Private Endpoints + DNS privado** | **IaaS (capa de red)** | Rangos, subredes, endpoints, reglas NSG, zonas DNS | Hardware de red físico | Es la única porción que la célula administra directamente; necesaria para aislar el Storage de internet. |
+
+**Consecuencia clave.** En Semana 1 **no existe IaaS de cómputo** (ni VMs ni Kubernetes). El único IaaS es la red. Es una decisión de costo (crédito compartido de USD 200) y de reducción de superficie administrable.
+
+---
+
+## ADR-002 — Diseño de la red privada
+
+**Contexto.** Requisito no negociable del enunciado: **los almacenes de datos no deben ser alcanzables desde internet**; solo la subred de la aplicación puede llegar a ellos. Aunque en Semana 1 aún no hay bases de datos, la red debe quedar lista para recibirlas en Semana 2 bajo esa restricción.
+
+**Decisión.**
+- Una **VNet** con dos subredes: `snet-app-integration` (integración VNet del App Service) y `snet-private-endpoints` (Private Endpoints de Blob y Queue).
+- **Acceso público del Storage deshabilitado** (`publicNetworkAccess = Disabled`).
+- Acceso al Storage exclusivamente vía **Private Endpoint** + **zona DNS privada**, alcanzable solo desde la VNet.
+- Reglas de tráfico (NSG) documentadas en `2_Arquitectura/3_Diagrama_Red.md`.
+
+**Alternativas descartadas.**
+- *Firewall de Storage por IP*: frágil y no cumple "no alcanzable desde internet" de forma robusta.
+- *Service Endpoints en vez de Private Endpoints*: no dan IP privada real ni el mismo aislamiento que se necesitará en Semana 2.
+
+**Consecuencia.** En Semana 2 se pueden añadir las bases de datos detrás de la misma subred de Private Endpoints sin rehacer la topología. Revertir esto más tarde (con el pipeline encima) sería la decisión más costosa del proyecto — por eso se cierra ahora.
+
+---
+
+## ADR-003 — Permisos del rol Servicio (mínimo privilegio)
+
+**Contexto.** El rol **Servicio** es la identidad que corre desatendida; es el objetivo natural de un atacante. Cada permiso de más es superficie de ataque. El enunciado exige justificar cada permiso que se le da.
+
+**Decisión.** El rol Servicio se materializa en dos planos, cada uno con lo mínimo:
+
+**Plano de aplicación (app role `SERVICE` en Entra ID):**
+| Permiso | ¿Por qué es necesario? |
+|---|---|
+| Invocar `POST /api/v1/transactions` | Es la única acción del sistema originador: entregar la transacción a la ingesta. |
+| **Nada más** | No puede cargar documentos (eso es del Analista), ni leer, ni administrar. |
+
+**Plano de datos (Managed Identity del App Service):**
+| Permiso | ¿Por qué es necesario? |
+|---|---|
+| Rol de **datos de Blob** acotado a los contenedores que usa la API | Persistir el JSON crudo de la transacción y guardar documentos. Es acceso de datos, no de administración. |
+| **Sin permiso de Queue Storage** | La cola no forma parte del flujo de negocio de Semana 1; darle acceso sería superficie ociosa. |
+| **Sin Contributor ni Owner** sobre el Resource Group | La app nunca modifica infraestructura; solo lee/escribe datos. |
+
+**Consecuencia.** Un Servicio comprometido solo puede escribir en dos contenedores de Blob acotados. No puede tocar red, identidades, ni otros recursos. La prueba de mínimo privilegio (Analista no puede modificar recursos) se verifica en `TEST-S1-009`.
+
+---
+
+## ADR-004 — Alta disponibilidad vs. control de costo (decisión con trade-off explícito)
+
+**Contexto.** El enunciado exige que la API tolere la caída de una instancia sin perder transacciones y que se pueda tumbar una instancia en la demo y el sistema siga respondiendo. Al mismo tiempo, el equipo comparte un crédito de USD 200 y correr dos instancias permanentes lo consume más rápido.
+
+**Decisión.**
+- El App Service Plan usa un SKU que **soporta escala horizontal y deployment slots**.
+- **Operación normal: una (1) instancia.**
+- **Durante la prueba/demo de HA: se escala temporalmente a dos (2) instancias**, se retira una y se demuestra continuidad; luego se vuelve a una.
+
+**Trade-off explícito (importante).** En operación normal, con una sola instancia, **no hay redundancia real**: si esa instancia cae, hay interrupción hasta que la plataforma la reponga. La tolerancia a caída de instancia se **demuestra** puntualmente escalando a dos, no se sostiene 24/7. Es una decisión consciente de costo, no un olvido.
+
+**Cómo cerrar la brecha si se exige HA permanente.** Fijar el mínimo de instancias en 2 en el plan (aumenta costo del crédito). Queda documentado como palanca disponible.
+
+**Verificación:** `ISS-S1-012` / `TEST-S1-024`.
+
+---
+
+## ADR-005 — Sin secretos: Managed Identity desde el día uno
+
+**Contexto.** El enunciado prohíbe cualquier credencial, cadena de conexión o clave en código o repositorio.
+
+**Decisión.** El acceso a Blob y Queue se hace con **Managed Identity** (`DefaultAzureCredential`), sin cadenas de conexión. **No se crea Key Vault** salvo que aparezca un secreto real e inevitable; no se crea un vault vacío "por si acaso".
+
+**Consecuencia.** No hay secretos que rotar ni fugar. Si Semana 2 introduce un secreto externo real (p. ej. clave de un proveedor de IA), entonces —y solo entonces— se añade Key Vault.
+
+---
+
+## ADR-006 — Stack y estructura interna
+
+**Contexto.** El lenguaje es libre; lo que no es libre es el contrato entre piezas.
+
+**Decisión.** **Java 21 + Spring Boot + Maven**, con **arquitectura hexagonal** (puertos y adaptadores) y una **aplicación modular** (no microservicios en Semana 1). Los adaptadores de Azure quedan aislados detrás de puertos para poder conectar el pipeline de Semana 2 sin tocar el dominio.
+
+**Consecuencia.** El endpoint de ingesta y el JSON crudo almacenado quedan estables; Semana 2 se conecta por un punto de extensión en la capa de aplicación.
+
+---
+
+## Decisiones deliberadamente abiertas para Semana 2
+
+No se deciden todavía (esperan `Azure-Semana2.md`): qué componente consume la cola, qué servicio serverless se usa, el formato final del evento de scoring, si la cola actual evoluciona a otro servicio de mensajería, qué almacén guarda el historial de transacciones, qué base de datos gestiona los casos, las reglas/puntuaciones/umbral, y la estructura del caso de fraude.
