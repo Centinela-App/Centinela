@@ -1,0 +1,9 @@
+com\centinela\documentstorage\application\package-info.class
+com\centinela\transactioningestion\domain\package-info.class
+com\centinela\CentinelaApplication.class
+com\centinela\transactioningestion\infrastructure\package-info.class
+com\centinela\identityaccess\package-info.class
+com\centinela\documentstorage\domain\package-info.class
+com\centinela\documentstorage\infrastructure\package-info.class
+com\centinela\transactioningestion\application\package-info.class
+com\centinela\shared\package-info.class
