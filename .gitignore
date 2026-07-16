@@ -1,0 +1,17 @@
+# === Secretos y configuracion local (NUNCA se commitean) ===
+.env
+*.env
+!.env.example
+*.pem
+*.key
+*secret*
+
+# === Build / Maven ===
+target/
+
+# === IDE ===
+.idea/
+*.iml
+
+# === Logs y temporales ===
+*.log
