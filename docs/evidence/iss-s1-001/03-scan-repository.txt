@@ -1,0 +1,2 @@
+$ bash scripts/tests/scan-repository.sh
+OK: no se detectaron secretos ni cadenas de conexion.
