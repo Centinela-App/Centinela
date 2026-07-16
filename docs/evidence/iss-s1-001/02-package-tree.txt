@@ -1,0 +1,24 @@
+$ git ls-files src scripts pom.xml .gitignore
+# Estructura hexagonal modular — ISS-S1-001 (2026-07-15)
+
+.gitignore
+pom.xml
+scripts/tests/scan-repository.sh
+src/main/java/com/centinela/CentinelaApplication.java
+src/main/java/com/centinela/documentstorage/application/package-info.java
+src/main/java/com/centinela/documentstorage/domain/package-info.java
+src/main/java/com/centinela/documentstorage/infrastructure/package-info.java
+src/main/java/com/centinela/identityaccess/package-info.java
+src/main/java/com/centinela/shared/package-info.java
+src/main/java/com/centinela/transactioningestion/application/package-info.java
+src/main/java/com/centinela/transactioningestion/domain/package-info.java
+src/main/java/com/centinela/transactioningestion/infrastructure/package-info.java
+src/main/resources/application-test.yml
+src/main/resources/application.yml
+src/test/java/com/centinela/architecture/ArchitectureConventionsTest.java
+
+# Cuatro módulos lógicos de Semana 1 identificables:
+#   - transactioningestion  (domain, application, infrastructure)
+#   - documentstorage       (domain, application, infrastructure)
+#   - identityaccess
+#   - shared

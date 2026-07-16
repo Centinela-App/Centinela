@@ -1,0 +1,13 @@
+$ bash scripts/tests/scan-repository.sh
+# Patrones buscados: AccountKey= | DefaultEndpointsProtocol= | client-secret | BEGIN PRIVATE KEY
+# Exclusiones: .git, target
+# Fecha: 2026-07-15
+
+OK: no se detectaron secretos ni cadenas de conexion.
+$ echo $?
+0
+
+# Verificación cruzada manual (comando del DoD):
+$ grep -RInE "AccountKey=|DefaultEndpointsProtocol=|client-secret|BEGIN PRIVATE KEY" . --exclude-dir=.git --exclude-dir=target
+# Las únicas coincidencias son las definiciones del propio patrón dentro de la
+# documentación y del script scan-repository.sh — NO son secretos reales.

@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: centinela
+
+# Configuracion base. Los valores por ambiente (staging/production) y los nombres
+# de contenedores/colas se inyectan como app settings del App Service (ISS-004),
+# nunca como secretos versionados.
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+  endpoint:
+    health:
+      probes:
+        enabled: true

@@ -1,0 +1,11 @@
+# Perfil de prueba: arranca la aplicacion SIN conectarse a Azure.
+# No define credenciales, connection strings ni endpoints de Storage.
+spring:
+  application:
+    name: centinela-test
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
