@@ -1,0 +1,3 @@
+# Los scripts de shell DEBEN conservar terminaciones LF para ejecutarse en
+# bash (en Windows, CRLF rompe el shebang y produce "$'\r': command not found").
+*.sh text eol=lf
