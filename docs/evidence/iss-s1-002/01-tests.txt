@@ -1,0 +1,8 @@
+$ bash scripts/tests/test-deploy-parameters.sh
+PASS caso 1: falla antes de Azure con parametro faltante
+PASS caso 2: valida offline y luego exige az
+TEST-S1-003 OK
+
+$ bash scripts/tests/test-destroy-safety.sh
+PASS caso 1: rechaza confirmacion equivocada sin borrar
+TEST-S1-004 OK

@@ -240,6 +240,52 @@ AI_SERVICE_ENDPOINT=
 AI_SERVICE_KEY=
 ```
 
+### 13.1 Scripts de infraestructura (Semana 1 · ISS-S1-002)
+
+Los scripts de `scripts/` despliegan, validan y destruyen la infraestructura de Semana 1.
+Toman su configuración de un archivo `.env` local (nunca versionado; ver `.env.example`).
+
+**Parámetros obligatorios (en `.env`):**
+
+| Parámetro | Descripción | Ejemplo |
+|---|---|---|
+| `SUBSCRIPTION_ID` | ID de la suscripción de Azure (UUID) | `az account show --query id -o tsv` |
+| `LOCATION` | Región de Azure | `eastus2` |
+| `RESOURCE_GROUP` | Nombre del Resource Group | `rg-centinela-week1` |
+| `NAME_PREFIX` | Prefijo de recursos (3–11 minúsculas/números) | `cent` |
+| `APP_SERVICE_SKU` | SKU con soporte de slots y escala | `S1` |
+
+**Preparación:**
+
+```bash
+cp .env.example .env      # y rellena tus valores reales (NO se commitea)
+az login                  # sesión de Azure activa
+```
+
+**Comandos:**
+
+```bash
+# Validar entorno (parámetros + sesión az + región + SKU) sin crear nada:
+bash scripts/validate-week1.sh
+
+# Ver el plan de despliegue sin crear recursos:
+bash scripts/deploy-week1.sh --validate-only
+
+# Desplegar (crea el Resource Group con tags y ejecuta los pasos disponibles):
+bash scripts/deploy-week1.sh
+
+# Destruir (pide teclear el nombre exacto del RG para confirmar):
+bash scripts/destroy-week1.sh
+bash scripts/destroy-week1.sh --yes   # modo automatización, sin prompt
+
+# Pruebas obligatorias de la issue:
+bash scripts/tests/test-deploy-parameters.sh   # TEST-S1-003
+bash scripts/tests/test-destroy-safety.sh      # TEST-S1-004
+```
+
+> ⚠️ **Costos:** los recursos consumen el crédito compartido de USD 200. Ejecuta
+> `destroy-week1.sh` al terminar para no dejar recursos encendidos.
+
 ## 14. Matriz de roles y accesos
 
 Para cumplir con el principio de menor privilegio, el sistema gestiona cuatro roles definidos:

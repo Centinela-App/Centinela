@@ -1,0 +1,2 @@
+$ shellcheck -x --source-path=SCRIPTDIR scripts/*.sh scripts/lib/*.sh scripts/tests/*.sh
+(exit 0  — sin hallazgos = limpio)
