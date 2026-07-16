@@ -36,9 +36,10 @@ main() {
   [ "$active_sub" = "$SUBSCRIPTION_ID" ] \
     || die "Suscripcion activa ($(mask "$active_sub")) != SUBSCRIPTION_ID ($(mask "$SUBSCRIPTION_ID"))."
 
-  az account list-locations --query "[?name=='$LOCATION'] | [0].name" -o tsv | grep -q . \
-    || die "Region '$LOCATION' no valida/disponible."
-  az appservice list-locations --sku "$APP_SERVICE_SKU" --query "[?name=='$LOCATION'] | [0].name" -o tsv | grep -q . \
+  local loc_display; loc_display="$(az account list-locations --query "[?name=='$LOCATION'] | [0].displayName" -o tsv)"
+  [ -n "$loc_display" ] || die "Region '$LOCATION' no valida/disponible."
+  # appservice list-locations usa el nombre display ("East US 2"), no el corto.
+  az appservice list-locations --sku "$APP_SERVICE_SKU" --query "[?name=='$loc_display'] | [0].name" -o tsv | grep -q . \
     || die "SKU '$APP_SERVICE_SKU' no disponible en '$LOCATION' o sin soporte de slots/escala."
 
   log_info "Plan de despliegue:"
