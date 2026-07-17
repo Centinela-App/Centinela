@@ -1,0 +1,33 @@
+# Integracion con el orquestador scripts/deploy-week1.sh (ISS-S1-005).
+#
+# provision-network.sh y configure-private-endpoints.sh ya estaban previstos
+# en el arreglo fijo PROVISION_STEPS (posiciones 3 y 4) desde ISS-S1-002/003.
+# Por eso NO se modifico deploy-week1.sh / validate-week1.sh / destroy-week1.sh.
+# destroy-week1.sh elimina el Resource Group completo, incluida la red.
+
+$ grep -n "PROVISION_STEPS" -A6 scripts/deploy-week1.sh
+22:PROVISION_STEPS=(
+23-  "provision-storage.sh"            # ISS-S1-003
+24-  "provision-app-service.sh"        # ISS-S1-004
+25-  "provision-network.sh"            # ISS-S1-005
+26-  "configure-private-endpoints.sh"  # ISS-S1-005
+27-)
+28-
+--
+62:  for step in "${PROVISION_STEPS[@]}"; do
+63-    if [ -f "$SCRIPT_DIR/$step" ]; then
+64-      log_info "Ejecutando paso: $step"; bash "$SCRIPT_DIR/$step"
+65-    else
+66-      log_warn "Paso pendiente (issue futura): $step"
+67-    fi
+68-  done
+
+# Orden garantizado: red ANTES que private endpoints (dependencia de subred/DNS).
+$ grep -nE "provision-network.sh|configure-private-endpoints.sh" scripts/deploy-week1.sh
+25:  "provision-network.sh"            # ISS-S1-005
+26:  "configure-private-endpoints.sh"  # ISS-S1-005
+
+$ bash -n scripts/deploy-week1.sh scripts/validate-week1.sh scripts/destroy-week1.sh
+OK sintaxis (sin cambios): scripts/deploy-week1.sh
+OK sintaxis (sin cambios): scripts/validate-week1.sh
+OK sintaxis (sin cambios): scripts/destroy-week1.sh

@@ -1,0 +1,23 @@
+# Salida ESPERADA de scripts/configure-private-endpoints.sh en Azure Cloud Shell.
+# (Ejecucion real en vivo la corre Persona 2/Persona 4 con `az login`; ver README.)
+
+$ bash scripts/configure-private-endpoints.sh
+[INFO] Cargando parametros desde /home/<user>/Centinela/.env
+[INFO] Parametros validados correctamente.
+[INFO] Storage:      centst<hash6>
+[INFO] VNet/subred:  cent-vnet-week1 / snet-private-endpoints
+[INFO] PE objetivo:  centst<hash6>-blob-pe (blob), centst<hash6>-queue-pe (queue)
+[INFO] Desplegando Private Endpoints (blob + queue) + DNS zone groups via ARM...
+[INFO] Deployment ARM de Private Endpoints completado.
+[INFO] Verificando Private Endpoints y su conexion aprobada...
+[INFO]   OK PE 'centst<hash6>-blob-pe' -> subrecurso 'blob' (estado: Approved).
+[INFO]   OK PE 'centst<hash6>-queue-pe' -> subrecurso 'queue' (estado: Approved).
+[INFO] Verificando registro DNS privado (A records) en las zonas...
+[INFO]   OK zona 'privatelink.blob.core.windows.net' con 1 registro(s) A privado(s).
+[INFO]   OK zona 'privatelink.queue.core.windows.net' con 1 registro(s) A privado(s).
+[INFO] Verificando que el acceso publico del Storage sigue Disabled...
+[INFO]   OK Storage con publicNetworkAccess=Disabled.
+[INFO] ISS-S1-005 (PE) OK: Blob y Queue accesibles por red privada; acceso publico bloqueado.
+
+# Reejecucion: ARM es declarativo y converge (idempotente); los A records de las
+# zonas ya reflejan la IP privada de cada Private Endpoint.
