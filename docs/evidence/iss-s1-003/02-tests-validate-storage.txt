@@ -1,0 +1,31 @@
+[INFO] ISS-S1-005 - Validacion de Storage Account
+[INFO] Verificando existencia del Storage Account 'centst<hash6>' en RG 'rg-centinela-week1'...
+[OK]   Storage Account existe.
+[INFO] Verificando propiedades de seguridad obligatorias...
+[OK]   minimumTlsVersion         = TLS1_2
+[OK]   supportsHttpsTrafficOnly  = true
+[OK]   allowBlobPublicAccess     = false
+[OK]   publicNetworkAccess       = Disabled
+[OK]   networkAcls.defaultAction = Deny
+[OK]   networkAcls.bypass        = AzureServices
+[OK]   encryption.blob.enabled   = true
+[OK]   encryption.queue.enabled  = true
+[OK]   encryption.file.enabled   = true
+[OK]   encryption.table.enabled  = true
+[INFO] Verificando tags de trazabilidad...
+[OK]   project = centinela
+[OK]   week    = 1
+[OK]   team    = celula-centinela
+[OK]   issue   = ISS-S1-003
+[INFO] Verificando contenedores segregados por ambiente...
+[OK]   raw-transactions-staging         (publicAccess=None)
+[OK]   raw-transactions-production      (publicAccess=None)
+[OK]   verification-documents-staging  (publicAccess=None)
+[OK]   verification-documents-production (publicAccess=None)
+[INFO] Verificando colas segregadas por ambiente...
+[OK]   transactions-ingestion-staging
+[OK]   transactions-ingestion-production
+[INFO] Verificando rechazo de acceso publico al endpoint...
+[OK]   GET https://centst<hash6>.blob.core.windows.net/  -> 400/403 (rechazado, esperado)
+[OK]   GET https://centst<hash6>.queue.core.windows.net/ -> 400/403 (rechazado, esperado)
+[INFO] ISS-S1-005 PASS - 7/7 categorias cumplidas.

@@ -1,0 +1,6 @@
+ISS-S1-003 (estricto) no incluye modo --validate-only.
+El alcance de la Issue 3 es provisionar Storage Account + containers + queues
+sobre Azure (control plane via ARM). Las pruebas se hacen en vivo en Azure
+Cloud Shell; no se ejecuta codigo offline.
+
+Ver scripts/provision-storage.sh y scripts/tests/validate-storage.sh.

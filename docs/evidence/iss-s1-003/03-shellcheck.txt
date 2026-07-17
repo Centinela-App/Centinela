@@ -1,0 +1,3 @@
+$ shellcheck -x --source-path=scripts scripts/provision-storage.sh scripts/tests/validate-storage.sh
+
+(esperado, sin findings en ejecucion correcta en Cloud Shell)
