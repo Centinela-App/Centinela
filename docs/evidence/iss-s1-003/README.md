@@ -16,8 +16,8 @@ seguridad obligatorias y tags de trazabilidad. Nada más.
 | `scripts/provision-storage.sh` | Implementación ISS-S1-003 (crea/asegura Storage + containers + queues vía ARM). |
 | `scripts/tests/validate-storage.sh` | TEST-S1-005: verifica en Azure que el SA + contenedores + colas cumplen las propiedades obligatorias. |
 | `docs/evidence/iss-s1-003/02-tests-validate-storage.txt` | Salida esperada de TEST-S1-005 en Cloud Shell. |
-| `docs/evidence/iss-s1-003/03-shellcheck.txt` | Resultado esperado de `shellcheck` sobre los dos scripts. |
-| `docs/evidence/iss-s1-003/04-integracion-deploy-week1.txt` | Confirmación de auto-discovery por `deploy-week1.sh`. |
+| `docs/evidence/iss-s1-003/03-shellcheck.txt` | Resultado de `shellcheck` sobre los dos scripts. |
+| `docs/evidence/iss-s1-003/04-integracion-deploy-week1.txt` | Integración con `scripts/deploy-week1.sh`. |
 
 ## Recursos creados (constantes del script)
 
@@ -77,7 +77,10 @@ export SUBSCRIPTION_ID="<tu-subscription-id>"
 export LOCATION="eastus2"
 export RESOURCE_GROUP="rg-centinela-week1"
 export NAME_PREFIX="cent"
-# APP_SERVICE_SKU no es necesario para ISS-S1-003
+# APP_SERVICE_SKU es obligatorio en .env (lo exige scripts/lib/parameters.sh
+# REQUIRED_PARAMS=...APP_SERVICE_SKU). Aunque ISS-S1-003 no lo consume,
+# validate_parameters fallara si no esta definido.
+export APP_SERVICE_SKU="S1"
 ```
 
 Para obtener tu `SUBSCRIPTION_ID` actual en Cloud Shell:
@@ -139,7 +142,7 @@ Re-ejecutar el mismo comando es idempotente:
 bash scripts/tests/validate-storage.sh
 ```
 
-Verifica existencia + 7 propiedades de seguridad + 4 tags + 4 contenedores + 2 colas
+Verifica existencia + 5 propiedades de seguridad + 4 tags + 4 contenedores + 2 colas
 + intento HTTP anónimo al endpoint público (debe ser rechazado). Salida esperada
 completa en `02-tests-validate-storage.txt`.
 
@@ -158,8 +161,11 @@ completa en `02-tests-validate-storage.txt`.
 bash scripts/deploy-week1.sh     # ejecuta todos los provision-* en orden
 ```
 
-`deploy-week1.sh` descubre automáticamente `scripts/provision-*.sh` por glob, así
-que **no fue necesario modificarlo**. Ver `04-integracion-deploy-week1.txt`.
+`deploy-week1.sh` registra los scripts de provisionamiento en un arreglo fijo
+denominado `PROVISION_STEPS` (NO usa un glob), y ya tenia
+`"provision-storage.sh  # ISS-S1-003"` listado en la posicion 1 desde el cierre
+de ISS-S1-002. Por ese motivo, **no fue necesario modificar** `deploy-week1.sh`
+para esta issue. Ver `04-integracion-deploy-week1.txt`.
 
 ## Pendiente fuera de este cambio
 
