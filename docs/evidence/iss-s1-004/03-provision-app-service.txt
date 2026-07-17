@@ -1,0 +1,32 @@
+# Salida ESPERADA de scripts/provision-app-service.sh en Azure Cloud Shell.
+# (Ejecucion real en vivo la corre Persona 2/Persona 4 con `az login`; ver README.)
+
+$ bash scripts/provision-app-service.sh
+[INFO] Cargando parametros desde /home/<user>/Centinela/.env
+[INFO] Parametros validados correctamente.
+[INFO] SKU 'S1' (tier Standard) soporta deployment slots y escala horizontal.
+[INFO] App Service Plan objetivo: cent-asp-week1 (SKU S1 / tier Standard)
+[INFO] Web App objetivo:          cent-app-<hash6>
+[INFO] Slot objetivo:             staging
+[INFO] Storage compartido (ref):  centst<hash6>
+[INFO] Desplegando App Service 'cent-app-<hash6>' + slot 'staging' via ARM (control plane)...
+[INFO] Deployment ARM completado.
+[INFO] Verificando Web App de produccion...
+[INFO]   OK Web App: cent-app-<hash6>
+[INFO] Verificando slot 'staging'...
+[INFO]   OK slot: staging
+[INFO] Verificando Managed Identity (produccion y staging)...
+[INFO]   OK identidad produccion: 1a2b…7f8e
+[INFO]   OK identidad staging:    9c8d…2a1b
+[INFO] Verificando aislamiento por ambiente...
+[INFO]   OK produccion -> production ; staging -> staging
+[INFO] Verificando instancia unica (capacity=1)...
+[INFO]   OK plan en 1 instancia.
+[INFO] ISS-S1-004 OK: Web App 'cent-app-<hash6>' + slot 'staging' con Managed Identity y ambientes aislados.
+
+# Reejecucion (idempotente): ARM es declarativo y converge al mismo estado.
+# capacity se restablece a 1 (util tras una prueba HA de ISS-S1-012).
+$ bash scripts/provision-app-service.sh
+[INFO] ...
+[INFO] Deployment ARM completado.
+[INFO] ISS-S1-004 OK: Web App 'cent-app-<hash6>' + slot 'staging' con Managed Identity y ambientes aislados.
