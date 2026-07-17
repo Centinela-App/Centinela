@@ -117,7 +117,7 @@ check_property() {
 }
 
 check_property 'minimumTlsVersion'             'TLS1_2'   'minimumTlsVersion'
-check_property 'supportsHttpsTrafficOnly'      true        'supportsHttpsTrafficOnly'
+check_property 'enableHttpsTrafficOnly'      true        'enableHttpsTrafficOnly'
 check_property 'allowBlobPublicAccess'         false       'allowBlobPublicAccess'
 check_property 'publicNetworkAccess'           'Disabled'  'publicNetworkAccess'
 check_property 'kind'                          'StorageV2' 'kind'
