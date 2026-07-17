@@ -1,0 +1,27 @@
+[INFO]  Sin archivo .env; usando variables de entorno del proceso.
+[INFO]  Parametros validados correctamente.
+[INFO]  Validando Storage Account: centinelast5c8658 (RG: rg-centinela-dev)
+
+================ ISS-S1-003 / TEST-S1-005 ================
+PASS  Storage Account 'centinelast5c8658' existe.
+PASS  Property minimumTlsVersion == 'TLS1_2'.
+PASS  Property enableHttpsTrafficOnly == 'true'.
+PASS  Property allowBlobPublicAccess == 'false'.
+PASS  Property publicNetworkAccess == 'Disabled'.
+PASS  Property kind == 'StorageV2'.
+PASS  Tag project == 'centinela'.
+PASS  Tag week == '1'.
+PASS  Tag team == 'celula-centinela'.
+PASS  Tag issue == 'ISS-S1-003'.
+PASS  Container 'raw-transactions-staging' existe y publicAccess=None.
+PASS  Container 'raw-transactions-production' existe y publicAccess=None.
+PASS  Container 'verification-documents-staging' existe y publicAccess=None.
+PASS  Container 'verification-documents-production' existe y publicAccess=None.
+PASS  Queue 'transactions-ingestion-staging' existe.
+PASS  Queue 'transactions-ingestion-production' existe.
+PASS  Cantidad esperada: 4 contenedores y 2 colas.
+PASS  Acceso publico rechazado con HTTP 403.
+scripts/tests/validate-storage.sh: line 49: printf: --: invalid option
+printf: usage: printf [-v var] format [arguments]
+Resumen: 18 PASS / 0 FAIL
+============================================================

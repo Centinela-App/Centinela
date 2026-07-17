@@ -188,7 +188,7 @@ assert_storage_account_compliant_if_exists() {
     --query 'minimumTlsVersion' -o tsv)"
   https_only="$(az storage account show \
     --name "$sa_name" --resource-group "$rg" \
-    --query 'supportsHttpsTrafficOnly' -o tsv)"
+    --query 'enableHttpsTrafficOnly' -o tsv)"
 
   [ "$blob_pub" = "false" ]    || { log_error "allowBlobPublicAccess debe ser false (actual: $blob_pub)"; return 1; }
   [ "$pub_net"  = "Disabled" ] || { log_error "publicNetworkAccess debe ser Disabled (actual: $pub_net)"; return 1; }
