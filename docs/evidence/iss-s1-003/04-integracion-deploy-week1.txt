@@ -1,0 +1,20 @@
+ISS-S1-003 es recogido por el orquestador `scripts/deploy-week1.sh`.
+
+Verificacion: `scripts/deploy-week1.sh` registra sus pasos en el arreglo fijo
+`PROVISION_STEPS` (NO usa un glob `provision-*.sh`); ISS-S1-003 ya estaba
+previsto al cierre de ISS-S1-002 como "ISS-S1-003" en la posicion 1.
+
+Bloque literal relevante (scripts/deploy-week1.sh):
+    PROVISION_STEPS=(
+      "provision-storage.sh"            # ISS-S1-003
+      "provision-app-service.sh"        # ISS-S1-004
+      "provision-network.sh"            # ISS-S1-005
+      "configure-private-endpoints.sh"  # ISS-S1-005
+    )
+
+Resultado en Cloud Shell (Persona 2 / Persona 4, ISS-S1-002 ya tenia ISS-S1-003 registrado):
+    [INFO] deploy-week1.sh - paso 1/N: scripts/provision-storage.sh   (ISS-S1-003)
+
+Sin cambios sobre `scripts/deploy-week1.sh`, `scripts/destroy-week1.sh` ni
+`scripts/validate-week1.sh` para esta issue: ISS-S1-003 ya estaba soportado
+por el registro en PROVISION_STEPS desde el cierre de ISS-S1-002.
