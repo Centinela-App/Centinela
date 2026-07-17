@@ -95,7 +95,7 @@ check_property() {
   if [ "$actual" = "$expected" ]; then
     ok "Property $label == '$expected'."
   else
-    fail "Property $Label'/$label' = '$actual' (esperado '$expected')."
+    fail "Property '$label' = '$actual' (esperado '$expected')."
   fi
 }
 
