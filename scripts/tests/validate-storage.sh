@@ -51,8 +51,20 @@ print_report() {
   printf '============================================================\n'
 }
 
-cleanup() { print_report; exit "$(( FAIL > 0 ? 1 : 0 ))"; }
-trap cleanup EXIT
+cleanup() {
+  local rc="${1:-$?}"
+
+  trap - EXIT
+  print_report
+
+  if [ "$rc" -ne 0 ]; then
+    exit "$rc"
+  fi
+
+  exit "$(( FAIL > 0 ? 1 : 0 ))"
+}
+
+trap 'cleanup $?' EXIT
 
 # --- Pre-condiciones ------------------------------------------------------------
 require_cmd az
@@ -65,10 +77,15 @@ az group show --name "$RESOURCE_GROUP" >/dev/null 2>&1 \
 # Calculamos el mismo nombre que provision-storage.sh produce (estable).
 sa_name() {
   local hash
-  hash="$(printf '%s' "${SUBSCRIPTION_ID}${RESOURCE_GROUP}${NAME_PREFIX}" \
-    | tr '[:upper:]' '[:lower:]' \
-    | sha1sum | cut -c1-6 | tr -dc '0-9a-f')"
-  [ -n "$hash" ] || hash="$(printf '%s' "$NAME_PREFIX" | sha1sum | cut -c1-6)"
+  hash="$(
+    printf '%s|%s|%s' \
+      "$NAME_PREFIX" \
+      "$SUBSCRIPTION_ID" \
+      "$RESOURCE_GROUP" \
+    | sha1sum \
+    | cut -c1-6
+  )"
+
   printf '%sst%s' "$NAME_PREFIX" "$hash"
 }
 SA_NAME="$(sa_name)"

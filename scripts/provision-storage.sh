@@ -75,8 +75,7 @@ render_arm_template() {
   local containers_json queues_json tags_json
   containers_json="$(printf '"%s",' "${CONTAINERS[@]}" | sed 's/,$//')"
   queues_json="$(printf '"%s",' "${QUEUES[@]}" | sed 's/,$//')"
-  tags_json="$(printf '"%s","%s","%s","%s"' \
-    "${TAGS[0]}" "${TAGS[1]}" "${TAGS[2]}" "${TAGS[3]}")"
+  tags_json='"project":"centinela","week":"1","team":"celula-centinela","issue":"ISS-S1-003"'
 
   cat <<JSON
 {
@@ -213,21 +212,32 @@ deploy_storage_via_arm() {
 
 verify_all_resources() {
   local sa_name="$1" rg="$2"
-  log_info "Verificando contenedores..."
+
+  log_info "Verificando contenedores mediante control plane..."
   local c
   for c in "${CONTAINERS[@]}"; do
-    az storage container show \
-      --name "$c" --account-name "$sa_name" --auth-mode login \
+    az resource show \
+      --resource-group "$rg" \
+      --namespace "Microsoft.Storage" \
+      --parent "storageAccounts/${sa_name}/blobServices/default" \
+      --resource-type "containers" \
+      --name "$c" \
       >/dev/null 2>&1 || die "Falta contenedor: $c"
+
     log_info "  OK contenedor: $c"
   done
 
-  log_info "Verificando colas..."
+  log_info "Verificando colas mediante control plane..."
   local q
   for q in "${QUEUES[@]}"; do
-    az storage queue show \
-      --name "$q" --account-name "$sa_name" --auth-mode login \
+    az resource show \
+      --resource-group "$rg" \
+      --namespace "Microsoft.Storage" \
+      --parent "storageAccounts/${sa_name}/queueServices/default" \
+      --resource-type "queues" \
+      --name "$q" \
       >/dev/null 2>&1 || die "Falta cola: $q"
+
     log_info "  OK cola: $q"
   done
 }
@@ -258,7 +268,7 @@ main() {
   if ! assert_storage_account_compliant_if_exists "$sa_name" "$RESOURCE_GROUP"; then
     local tmp_dir template_file params_file
     tmp_dir="$(mktemp -d)"
-    trap 'rm -rf "$tmp_dir"' EXIT
+    trap "rm -rf '$tmp_dir'" EXIT
     template_file="$tmp_dir/storage.template.json"
     params_file="$tmp_dir/storage.parameters.json"
     render_arm_template    > "$template_file"
