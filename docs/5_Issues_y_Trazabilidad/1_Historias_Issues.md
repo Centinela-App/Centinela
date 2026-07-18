@@ -1198,6 +1198,9 @@ La Semana 1 solo demuestra almacenamiento documental. No existe `caseId`, flujo 
 ### 5. Archivos que deben crearse
 
 ```text
+src/main/java/com/centinela/documentstorage/application/command/StoreVerificationDocumentCommand.java
+src/main/java/com/centinela/documentstorage/application/exception/InvalidVerificationDocumentException.java
+src/main/java/com/centinela/documentstorage/application/exception/DocumentStorageUnavailableException.java
 src/main/java/com/centinela/documentstorage/application/port/in/StoreVerificationDocumentUseCase.java
 src/main/java/com/centinela/documentstorage/application/port/out/VerificationDocumentStoragePort.java
 src/main/java/com/centinela/documentstorage/application/service/StoreVerificationDocumentService.java
@@ -1205,10 +1208,14 @@ src/main/java/com/centinela/documentstorage/domain/model/VerificationDocument.ja
 src/main/java/com/centinela/documentstorage/infrastructure/web/VerificationDocumentController.java
 src/main/java/com/centinela/documentstorage/infrastructure/web/dto/DocumentReceiptResponse.java
 src/main/java/com/centinela/documentstorage/infrastructure/azure/blob/AzureVerificationDocumentBlobAdapter.java
+src/main/java/com/centinela/documentstorage/infrastructure/config/DocumentStorageConfiguration.java
 src/test/java/com/centinela/documentstorage/application/StoreVerificationDocumentServiceTest.java
 src/test/java/com/centinela/documentstorage/infrastructure/web/VerificationDocumentApiIT.java
+src/test/java/com/centinela/documentstorage/infrastructure/azure/blob/AzureVerificationDocumentBlobAdapterIT.java
+src/test/java/com/centinela/documentstorage/contract/VerificationDocumentOpenApiContractTest.java
 
 scripts/tests/test-document-upload-e2e.sh
+docs/evidence/iss-s1-009/**
 ```
 
 ### 6. Archivos que pueden modificarse
@@ -1282,14 +1289,17 @@ Escenario: Nombre peligroso
 
 ```bash
 mvn -Dtest=StoreVerificationDocumentServiceTest test
-mvn -Dtest=VerificationDocumentApiIT verify
+mvn -Dtest=VerificationDocumentApiIT,VerificationDocumentOpenApiContractTest test
+mvn -Dtest=AzureVerificationDocumentBlobAdapterIT verify
+mvn test
 ```
 
 ### 13. Evidencia esperada
 
-- Respuesta `201`.
-- Ubicación y metadatos del Blob documental.
-- Pruebas de archivo ausente y nombre normalizado.
+- Respuesta `201` de la integración HTTP local.
+- Escritura, lectura, tamaño y limpieza del Blob documental en Azure.
+- Pruebas de archivo ausente, vacío y nombre normalizado.
+- Trazabilidad explícita de `TEST-S1-019`, `TEST-S1-022` y `TEST-S1-023` como pruebas posteriores.
 
 ### 14. Instrucción para una IA o integrante
 

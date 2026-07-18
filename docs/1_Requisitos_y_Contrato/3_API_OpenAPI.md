@@ -20,10 +20,13 @@ Respuesta:
 
 ## POST `/api/v1/verification-documents`
 
-- Actor: Analista.
-- Entrada: `multipart/form-data` con un campo `file`.
-- Guarda el archivo en Blob Storage.
-- Devuelve `201`.
+- Actor: Analista; la autorización por rol se completa en `ISS-S1-011`.
+- Entrada: `multipart/form-data` con un único campo obligatorio `file`.
+- Rechaza archivos ausentes o vacíos con `400`.
+- Normaliza el nombre original para eliminar rutas, separadores y caracteres inseguros.
+- Guarda los bytes en `yyyy/MM/dd/{documentId}/{nombreNormalizado}` dentro del contenedor documental del ambiente.
+- Devuelve `201` solo después de que Blob confirma la escritura.
+- Si Blob no está disponible, devuelve `503` sin exponer detalles internos.
 
 Respuesta:
 
@@ -33,6 +36,8 @@ Respuesta:
   "status": "STORED"
 }
 ```
+
+La solicitud y la respuesta no contienen `caseId`; la carga no se asocia todavía a un caso de fraude.
 
 ## Decisiones aplazadas
 
