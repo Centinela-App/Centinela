@@ -1,0 +1,12 @@
+Commit: 08c2fc4623cd934c5d1bfc38732acb6a2eebe2ce
+
+Working tree files:
+ M docs/1_Requisitos_y_Contrato/openapi-centinela-semana1.yaml
+ M docs/5_Issues_y_Trazabilidad/1_Historias_Issues.md
+?? docs/evidence/iss-s1-007/
+?? src/main/java/com/centinela/shared/web/
+?? src/main/java/com/centinela/transactioningestion/application/command/
+?? src/main/java/com/centinela/transactioningestion/application/port/
+?? src/main/java/com/centinela/transactioningestion/domain/model/
+?? src/main/java/com/centinela/transactioningestion/infrastructure/web/
+?? src/test/java/com/centinela/transactioningestion/

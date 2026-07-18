@@ -907,6 +907,8 @@ src/main/java/com/centinela/transactioningestion/application/port/in/IngestTrans
 src/main/java/com/centinela/transactioningestion/application/command/IngestTransactionCommand.java
 src/main/java/com/centinela/transactioningestion/infrastructure/web/TransactionController.java
 src/main/java/com/centinela/transactioningestion/infrastructure/web/dto/TransactionRequest.java
+src/main/java/com/centinela/transactioningestion/infrastructure/web/dto/LocationRequest.java
+src/main/java/com/centinela/transactioningestion/infrastructure/web/dto/MerchantRequest.java
 src/main/java/com/centinela/transactioningestion/infrastructure/web/dto/TransactionReceiptResponse.java
 src/main/java/com/centinela/transactioningestion/infrastructure/web/mapper/TransactionWebMapper.java
 src/main/java/com/centinela/shared/web/ApiExceptionHandler.java
@@ -916,6 +918,11 @@ src/test/java/com/centinela/transactioningestion/infrastructure/web/TransactionC
 src/test/java/com/centinela/transactioningestion/contract/OpenApiContractTest.java
 src/test/java/com/centinela/transactioningestion/infrastructure/web/dto/TransactionRequestValidationTest.java
 src/test/java/com/centinela/transactioningestion/infrastructure/web/TransactionWebMapperTest.java
+docs/evidence/iss-s1-007/README.md
+docs/evidence/iss-s1-007/capture-evidence.sh
+docs/evidence/iss-s1-007/examples/valid-request.json
+docs/evidence/iss-s1-007/examples/202-response.json
+docs/evidence/iss-s1-007/examples/400-response.json
 ```
 
 ### 6. Archivos que pueden modificarse
@@ -924,6 +931,7 @@ src/test/java/com/centinela/transactioningestion/infrastructure/web/TransactionW
 openapi-centinela-semana1.yaml
 1_Requisitos_y_Contrato/3_API_OpenAPI.md
 pom.xml solo si falta una dependencia ya aprobada.
+5_Issues_y_Trazabilidad/1_Historias_Issues.md solo para registrar los DTO separados y la evidencia autorizada.
 ```
 
 ### 7. Archivos prohibidos
@@ -988,8 +996,8 @@ Escenario: Campo futuro no permitido
 ### 12. Comandos de validación
 
 ```bash
-mvn -Dtest=TransactionControllerValidationTest test
-npx @redocly/cli lint openapi-centinela-semana1.yaml
+mvn -Dtest=TransactionControllerValidationTest,OpenApiContractTest,TransactionRequestValidationTest,TransactionWebMapperTest test
+npx @redocly/cli lint docs/1_Requisitos_y_Contrato/openapi-centinela-semana1.yaml
 ```
 
 ### 13. Evidencia esperada

@@ -1,17 +1,23 @@
 openapi: 3.0.3
+
 info:
   title: Centinela API - Semana 1
   version: 1.0.0
   description: API limitada a ingesta y carga técnica de documentos. No incluye scoring ni casos.
+  license:
+    name: Proprietary
+
 servers:
   - url: https://{host}
     variables:
       host:
         default: centinela.example.com
+
 paths:
   /api/v1/transactions:
     post:
       summary: Recibir y almacenar una transacción cruda
+      operationId: ingestTransaction
       security:
         - bearerAuth: []
       requestBody:
@@ -43,9 +49,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
   /api/v1/verification-documents:
     post:
       summary: Cargar un documento de verificación
+      operationId: uploadVerificationDocument
       security:
         - bearerAuth: []
       requestBody:
@@ -82,12 +90,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
   schemas:
     TransactionRequest:
       type: object
@@ -110,7 +120,8 @@ components:
         amount:
           type: number
           format: double
-          exclusiveMinimum: 0
+          minimum: 0
+          exclusiveMinimum: true
         currency:
           type: string
           minLength: 3
@@ -122,6 +133,7 @@ components:
           $ref: '#/components/schemas/Location'
         merchant:
           $ref: '#/components/schemas/Merchant'
+
     Location:
       type: object
       additionalProperties: false
@@ -142,6 +154,7 @@ components:
           type: number
           minimum: -180
           maximum: 180
+
     Merchant:
       type: object
       additionalProperties: false
@@ -153,8 +166,10 @@ components:
         category:
           type: string
           minLength: 1
+
     TransactionReceipt:
       type: object
+      additionalProperties: false
       required: [transactionId, status]
       properties:
         transactionId:
@@ -162,6 +177,7 @@ components:
         status:
           type: string
           enum: [RECEIVED]
+
     DocumentReceipt:
       type: object
       required: [documentId, status]
@@ -171,8 +187,10 @@ components:
         status:
           type: string
           enum: [STORED]
+
     ErrorResponse:
       type: object
+      additionalProperties: false
       required: [code, message]
       properties:
         code:
