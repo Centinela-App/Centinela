@@ -62,6 +62,7 @@ paths:
           multipart/form-data:
             schema:
               type: object
+              additionalProperties: false
               required: [file]
               properties:
                 file:
@@ -180,10 +181,12 @@ components:
 
     DocumentReceipt:
       type: object
+      additionalProperties: false
       required: [documentId, status]
       properties:
         documentId:
           type: string
+          minLength: 1
         status:
           type: string
           enum: [STORED]

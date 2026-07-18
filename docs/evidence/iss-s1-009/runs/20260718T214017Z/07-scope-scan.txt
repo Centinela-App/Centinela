@@ -1,0 +1,1 @@
+PASS: no se encontraron terminos prohibidos en la implementacion.

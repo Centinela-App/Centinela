@@ -15,3 +15,6 @@ centinela:
     blob:
       account-name: centinelatest
       container-name: raw-transactions-staging
+    documents:
+      account-name: centinelatest
+      container-name: verification-documents-staging
