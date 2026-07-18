@@ -6,7 +6,6 @@ import com.centinela.transactioningestion.infrastructure.web.dto.TransactionRece
 import com.centinela.transactioningestion.infrastructure.web.dto.TransactionRequest;
 import com.centinela.transactioningestion.infrastructure.web.mapper.TransactionWebMapper;
 import jakarta.validation.Valid;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,13 +16,11 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Adaptador HTTP para la ingesta de transacciones.
  *
- * <p>El bean se habilita cuando existe una implementacion del puerto de entrada.
- * Durante ISS-S1-007 el controller se prueba de forma aislada con ese puerto
- * simulado; ISS-S1-008 registra la implementacion real.
+ * <p>El acuse se construye unicamente despues de que el caso de uso confirma
+ * la persistencia de la transaccion.
  */
 @RestController
 @RequestMapping(path = "/api/v1/transactions", produces = MediaType.APPLICATION_JSON_VALUE)
-@ConditionalOnBean(IngestTransactionUseCase.class)
 public class TransactionController {
 
     private final IngestTransactionUseCase useCase;

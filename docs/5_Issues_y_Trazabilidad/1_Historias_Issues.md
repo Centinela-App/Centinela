@@ -1051,26 +1051,30 @@ Semana 1 conserva la transacción sin ejecutar análisis. El adaptador debe usar
 ### 5. Archivos que deben crearse
 
 ```text
+src/main/java/com/centinela/transactioningestion/application/exception/StorageUnavailableException.java
 src/main/java/com/centinela/transactioningestion/application/port/out/RawTransactionStoragePort.java
 src/main/java/com/centinela/transactioningestion/application/service/IngestTransactionService.java
 src/main/java/com/centinela/transactioningestion/infrastructure/azure/blob/AzureRawTransactionBlobAdapter.java
 src/main/java/com/centinela/transactioningestion/infrastructure/azure/blob/RawTransactionBlobProperties.java
 src/main/java/com/centinela/transactioningestion/infrastructure/azure/blob/BlobPathFactory.java
+src/main/java/com/centinela/transactioningestion/infrastructure/config/TransactionIngestionConfiguration.java
 src/test/java/com/centinela/transactioningestion/application/service/IngestTransactionServiceTest.java
 src/test/java/com/centinela/transactioningestion/infrastructure/azure/blob/AzureRawTransactionBlobAdapterIT.java
 src/test/java/com/centinela/transactioningestion/infrastructure/web/TransactionApiIT.java
-
 src/test/java/com/centinela/transactioningestion/infrastructure/web/TransactionApiValidationIT.java
 scripts/tests/test-transaction-e2e.sh
 scripts/tests/test-environment-isolation.sh
+docs/evidence/iss-s1-008/**
 ```
 
 ### 6. Archivos que pueden modificarse
 
 ```text
+pom.xml únicamente para agregar `azure-identity` bajo el BOM existente.
 TransactionController.java
 ApiExceptionHandler.java
 application*.yml únicamente con nombres no secretos de configuración.
+docs/5_Issues_y_Trazabilidad/1_Historias_Issues.md únicamente para autorizar estas correcciones de alcance.
 ```
 
 ### 7. Archivos prohibidos
@@ -1137,7 +1141,9 @@ Escenario: Aislamiento por ambiente
 
 ```bash
 mvn -Dtest=IngestTransactionServiceTest test
-mvn -Dtest=TransactionApiIT,AzureRawTransactionBlobAdapterIT verify
+mvn -Dtest=TransactionApiIT,TransactionApiValidationIT test
+CENTINELA_RUN_AZURE_IT=true mvn -Dtest=AzureRawTransactionBlobAdapterIT verify
+mvn test
 ```
 
 ### 13. Evidencia esperada
@@ -1145,6 +1151,7 @@ mvn -Dtest=TransactionApiIT,AzureRawTransactionBlobAdapterIT verify
 - Respuesta HTTP y ubicación del Blob.
 - Contenido sanitizado del Blob.
 - Reporte de pruebas unitarias e integración.
+- Ejecución Azure sin pruebas omitidas y limpieza del Blob sintético.
 
 ### 14. Instrucción para una IA o integrante
 

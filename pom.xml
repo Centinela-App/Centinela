@@ -61,10 +61,14 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
-        <!-- SDKs de Azure declarados desde ahora (issue lo exige); aun sin uso en codigo. -->
+        <!-- SDKs de Azure para Blob con autenticacion mediante DefaultAzureCredential. -->
         <dependency>
             <groupId>com.azure</groupId>
             <artifactId>azure-storage-blob</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.azure</groupId>
+            <artifactId>azure-identity</artifactId>
         </dependency>
         <dependency>
             <groupId>com.azure</groupId>
