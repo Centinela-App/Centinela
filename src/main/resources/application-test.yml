@@ -18,3 +18,12 @@ centinela:
     documents:
       account-name: centinelatest
       container-name: verification-documents-staging
+  security:
+    entra:
+      # Valores ficticios: el JwtDecoder solo resuelve el JWK set de forma
+      # perezosa (al decodificar un token real), y las pruebas de este
+      # perfil mockean JwtDecoder o desactivan los filtros de seguridad.
+      # Por eso no se realiza ninguna llamada de red al arrancar el contexto.
+      issuer-uri: https://login.microsoftonline.com/test-tenant/v2.0
+      audience: api://centinela-test
+      jwk-set-uri: https://login.microsoftonline.com/test-tenant/discovery/v2.0/keys
