@@ -10,12 +10,14 @@ if [[ "$ENVIRONMENT" != "staging" && "$ENVIRONMENT" != "production" ]]; then
 fi
 
 # Cuenta de almacenamiento y cola por ambiente (variables de entorno no secretas)
+# Las colas las crea provision-storage.sh (ISS-S1-003) con estos nombres exactos.
+# Se pueden sobreescribir con STAGING_QUEUE_NAME / PRODUCTION_QUEUE_NAME si aplica.
 if [[ "$ENVIRONMENT" == "staging" ]]; then
   STORAGE_ACCOUNT="${STAGING_STORAGE_ACCOUNT:?Define la variable STAGING_STORAGE_ACCOUNT}"
-  QUEUE_NAME="${STAGING_QUEUE_NAME:-centinela-queue-test-staging}"
+  QUEUE_NAME="${STAGING_QUEUE_NAME:-transactions-ingestion-staging}"
 else
   STORAGE_ACCOUNT="${PRODUCTION_STORAGE_ACCOUNT:?Define la variable PRODUCTION_STORAGE_ACCOUNT}"
-  QUEUE_NAME="${PRODUCTION_QUEUE_NAME:-centinela-queue-test-production}"
+  QUEUE_NAME="${PRODUCTION_QUEUE_NAME:-transactions-ingestion-production}"
 fi
 
 MAX_RETRIES="${MAX_RETRIES:-5}"

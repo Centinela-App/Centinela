@@ -51,42 +51,50 @@ log_scale_event() {
   log_info "SCALE: $event"
 }
 
-# get_webapp_name: Obtiene el nombre del Web App desde los parametros
+# get_webapp_name: nombre determinista del Web App, identico al de
+# provision-app-service.sh (compute_web_app_name): <prefix>-app-<sha1(prefix|sub|rg)[:6]>.
 get_webapp_name() {
-  local prefix="$NAME_PREFIX"
-  echo "${prefix}-webapp"
+  local hash
+  hash="$(printf '%s|%s|%s' "$NAME_PREFIX" "$SUBSCRIPTION_ID" "$RESOURCE_GROUP" | sha1sum | cut -c1-6)"
+  printf '%s-app-%s' "$NAME_PREFIX" "$hash"
 }
 
-# get_current_instances: Obtiene el numero actual de instancias
+# get_plan_name: nombre del App Service Plan (compute_plan_name): <prefix>-asp-week1.
+# El escalado horizontal en un plan Standard (S1) se hace sobre el plan, no sobre el
+# Web App (minimumElasticInstanceCount solo aplica a planes Premium/Elastic).
+get_plan_name() {
+  printf '%s-asp-week1' "$NAME_PREFIX"
+}
+
+# get_current_instances: numero actual de workers del App Service Plan.
 get_current_instances() {
-  local webapp_name
-  webapp_name="$(get_webapp_name)"
-  az webapp show \
+  local plan_name
+  plan_name="$(get_plan_name)"
+  az appservice plan show \
     --resource-group "$RESOURCE_GROUP" \
-    --name "$webapp_name" \
-    --query "properties.siteConfig.minimumElasticInstanceCount" \
+    --name "$plan_name" \
+    --query "sku.capacity" \
     --output tsv 2>/dev/null || echo "1"
 }
 
-# scale_to: Escala el App Service al numero de instancias especificado
+# scale_to: Escala el App Service Plan al numero de instancias (workers) especificado.
 scale_to() {
   local target_instances="$1"
-  local webapp_name
-  webapp_name="$(get_webapp_name)"
-  
-  log_scale_event "Escalando a $target_instances instancia(s)"
-  
-  # Usar az webapp update para cambiar el numero de instancias
-  az webapp update \
+  local plan_name
+  plan_name="$(get_plan_name)"
+
+  log_scale_event "Escalando el plan '$plan_name' a $target_instances instancia(s)"
+
+  az appservice plan update \
     --resource-group "$RESOURCE_GROUP" \
-    --name "$webapp_name" \
-    --minimum-elastic-instances "$target_instances" \
+    --name "$plan_name" \
+    --number-of-workers "$target_instances" \
     --only-show-errors 2>&1 | tee -a "$SCALE_EVENT_LOG"
-  
+
   # Esperar a que se aplique el cambio
   log_info "Esperando aplicacion del cambio de escala..."
   sleep 10
-  
+
   log_scale_event "Escala completada a $target_instances instancia(s)"
 }
 
@@ -98,31 +106,33 @@ capture_scale_event() {
   
   log_scale_event "Capturando evidencia del evento: $event_type"
   
-  # Registrar estado de la configuracion
+  # Registrar estado del Web App y la capacidad (workers) del plan.
+  local plan_name
+  plan_name="$(get_plan_name)"
   az webapp show \
     --resource-group "$RESOURCE_GROUP" \
     --name "$webapp_name" \
-    --query "{
-      name: name,
-      instanceCount: properties.siteConfig.minimumElasticInstanceCount,
-      state: state,
-      hostName: enabledHostNames[0]
-    }" \
+    --query "{ name: name, state: state, hostName: enabledHostNames[0] }" \
+    --output json 2>&1 | tee -a "$SCALE_EVENT_LOG"
+  az appservice plan show \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$plan_name" \
+    --query "{ plan: name, instanceCount: sku.capacity }" \
     --output json 2>&1 | tee -a "$SCALE_EVENT_LOG"
 }
 
 # verify_two_instances: Verifica si Azure permite escalar a dos instancias
 verify_two_instances() {
-  local webapp_name
-  webapp_name="$(get_webapp_name)"
-  
-  log_info "Verificando capacidad de escalar a $SCALE_UP_INSTANCES instancias..."
-  
-  # Intentar escalar a dos instancias
-  if az webapp update \
+  local plan_name
+  plan_name="$(get_plan_name)"
+
+  log_info "Verificando capacidad de escalar el plan '$plan_name' a $SCALE_UP_INSTANCES instancias..."
+
+  # Intentar escalar el plan a dos workers
+  if az appservice plan update \
     --resource-group "$RESOURCE_GROUP" \
-    --name "$webapp_name" \
-    --minimum-elastic-instances "$SCALE_UP_INSTANCES" \
+    --name "$plan_name" \
+    --number-of-workers "$SCALE_UP_INSTANCES" \
     --only-show-errors >/dev/null 2>&1; then
     log_info "Escalado a dos instancias exitoso"
     return 0
