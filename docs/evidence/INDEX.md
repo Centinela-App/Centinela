@@ -1,132 +1,107 @@
-# Índice de Evidencias - Semana 1
+# Índice de Evidencias — Semana 1
 
-Este índice documenta todas las evidencias generadas durante Semana 1, con referencias a commits, ambientes y rutas de archivos.
+Este índice mapea cada issue con su evidencia real versionada en el repositorio. Los
+títulos coinciden con `docs/5_Issues_y_Trazabilidad/1_Historias_Issues.md`.
 
-## Notas Importantes
+## Notas importantes
 
-⚠️ **SANITIZACIÓN**: Todos los IDs sensibles han sido reemplazados con marcadores como `<subscription-id>`, `<resource-id>`, `<tenant-id>`.
+⚠️ **SANITIZACIÓN**: Los IDs sensibles se reemplazan con marcadores (`<subscription-id>`,
+`<resource-id>`, `<tenant-id>`). No se versionan credenciales reales.
 
-⚠️ **SECRETS**: No se incluyen credenciales reales. Usar `.env` local para valores sensibles.
-
----
-
-## Evidencia por Issue
-
-### ISS-S1-001: Código Base
-| Fecha | Commit | Run | Descripción | Ruta |
-|-------|--------|-----|-------------|------|
-| 2026-07-20 | 9bd51be | - | Código inicial Java/Spring | `src/` |
-| 2026-07-20 | - | - | Tree de dependencias | `docs/evidence/iss-s1-001/` |
-
-### ISS-S1-002: Validación de Código
-| Fecha | Commit | Run | Descripción | Ruta |
-|-------|--------|-----|-------------|------|
-| 2026-07-20 | 9bd51be | run-01 | ShellCheck limpio | `docs/evidence/iss-s1-002/` |
-| 2026-07-20 | 9bd51be | run-01 | Validación sin recursos | `docs/evidence/iss-s1-002/` |
-
-### ISS-S1-003: Provisionamiento Storage
-| Fecha | Commit | Run | Descripción | Ruta |
-|-------|--------|-----|-------------|------|
-| 2026-07-20 | 9bd51be | run-01 | Provisionamiento exitoso | `docs/evidence/iss-s1-003/` |
-| 2026-07-20 | 9bd51be | run-01 | Recursos finales Azure | `docs/evidence/iss-s1-003/08-azure-resources-final.txt` |
-
-### ISS-S1-004: App Service
-| Fecha | Commit | Run | Descripción | Ruta |
-|-------|--------|-----|-------------|------|
-| 2026-07-20 | 9bd51be | run-01 | Provisionamiento | `docs/evidence/iss-s1-004/` |
-| 2026-07-20 | 9bd51be | run-01 | Validación SKU | `docs/evidence/iss-s1-004/02-sku-validation.txt` |
-
-### ISS-S1-005: Private Endpoints
-| Fecha | Commit | Run | Descripción | Ruta |
-|-------|--------|-----|-------------|------|
-| 2026-07-20 | 9bd51be | run-01 | Configuración endpoints | `docs/evidence/iss-s1-005/` |
-| 2026-07-20 | 9bd51be | run-01 | Validación red | `docs/evidence/iss-s1-005/04-validate-network.txt` |
-
-### ISS-S1-006: RBAC y Entra
-| Fecha | Commit | Run | Descripción | Ruta |
-|-------|--------|-----|-------------|------|
-| 2026-07-20 | 9bd51be | run-01 | Roles asignados | `docs/evidence/iss-s1-006/` |
-| 2026-07-20 | 9bd51be | run-01 | Validación RBAC | `docs/evidence/iss-s1-006/04-validate-rbac.txt` |
-
-### ISS-S1-007: Pruebas E2E
-| Fecha | Commit | Run | Descripción | Ruta |
-|-------|--------|-----|-------------|------|
-| 2026-07-20 | 9bd51be | run-01 | Suite completa | `docs/evidence/iss-s1-007/runs/` |
-| 2026-07-20 | 9bd51be | run-01 | Resultados OpenAPI lint | `docs/evidence/iss-s1-007/03-openapi-lint.txt` |
-
-### ISS-S1-008: Documentación HA
-| Fecha | Commit | Run | Descripción | Ruta |
-|-------|--------|-----|-------------|------|
-| 2026-07-20 | 9bd51be | run-01 | Scripts HA | `docs/evidence/iss-s1-008/runs/` |
-
-### HA (Alta Disponibilidad)
-| Fecha | Commit | Run | Descripción | Ruta |
-|-------|--------|-----|-------------|------|
-| - | - | - | Script de prueba HA | `docs/evidence/ha/` |
-
-### Queue
-| Fecha | Commit | Run | Descripción | Ruta |
-|-------|--------|-----|-------------|------|
-| - | - | - | Validación queue | `docs/evidence/queue/` |
+⚠️ **ALCANCE DE EVIDENCIA**: Las pruebas obligatorias locales (unitarias, contrato,
+arquitectura, integración MockMvc, sintaxis de scripts y validaciones de documentación)
+están ejecutadas y versionadas. Las pruebas E2E contra Azure real (colas, HA, despliegue
+y destrucción) requieren una suscripción activa; su código está completo y su ejecución
+queda documentada como pendiente. No se fabrica evidencia de Azure (regla del DoD).
 
 ---
 
-## Comandos para Generar Evidencia
+## Evidencia por issue
 
-```bash
-# Generar evidencia de issue específica
-cd docs/evidence/iss-s1-003/
-../capture-evidence.sh
-
-# Generar toda la evidencia
-find docs/evidence -name "capture-evidence.sh" -exec {} \;
-```
-
----
-
-## Estructura de Evidencia
-
-```
-docs/evidence/
-├── INDEX.md                    # Este archivo
-├── ha/                         # Alta disponibilidad
-├── identity/                   # Managed identity
-├── iss-s1-001/                 # Issue específica
-│   ├── 01-*.txt               # Capturas numbered
-│   ├── 02-*.txt
-│   └── README.md              # Metadata
-├── iss-s1-002/
-├── ... (más issues)
-├── queue/                      # Validación queue
-└── examples/                  # Templates de evidencia
-```
+| Issue | Título | Estado | Evidencia |
+|---|---|---|---|
+| ISS-S1-001 | Preparar repositorio Java y estructura hexagonal | ✅ local | `iss-s1-001/` |
+| ISS-S1-002 | Scripts base de infraestructura y control de costos | ✅ local + Azure | `iss-s1-002/` |
+| ISS-S1-003 | Storage, contenedores y colas por ambiente | ✅ local + Azure | `iss-s1-003/` |
+| ISS-S1-004 | App Service, Managed Identity y slot staging | ✅ local + Azure | `iss-s1-004/` |
+| ISS-S1-005 | VNet, subredes, DNS y Private Endpoints | ✅ local + Azure | `iss-s1-005/` |
+| ISS-S1-006 | Entra ID, roles y RBAC mínimo | ✅ local + Azure | `iss-s1-006/` |
+| ISS-S1-007 | Contrato de transacción (OpenAPI, DTO, mapper) | ✅ local | `iss-s1-007/` |
+| ISS-S1-008 | Persistir transacción cruda en Blob | ✅ local (IT MockMvc) | `iss-s1-008/` |
+| ISS-S1-009 | Carga técnica de documentos | ✅ local (IT MockMvc) | `iss-s1-009/` |
+| ISS-S1-010 | Roundtrip de Queue Storage | ⏳ scripts OK · run Azure pendiente | `iss-s1-010/` |
+| ISS-S1-011 | Proteger endpoints y mínimo privilegio | ✅ local (401/403 MockMvc) | `iss-s1-011/` |
+| ISS-S1-012 | Probar alta disponibilidad de la API | ⏳ scripts OK · run Azure pendiente | `iss-s1-012/` |
+| ISS-S1-013 | README, matriz, diagrama, ADR y evidencias | ✅ local | `iss-s1-013/` |
+| ISS-S1-014 | Destrucción, reconstrucción y cierre final | ⏳ scripts OK · run Azure pendiente | `final/` |
 
 ---
 
-## Criterios de Calidad de Evidencia
+## Detalle por issue
 
-- [x] Sin secrets reales
-- [x] IDs sensibles sanitizados
-- [x] Timestamps en formato ISO 8601
-- [x] Commits referenciados
-- [x] Descripción clara del contenido
-- [x] Rutas relativas al repo
+### ISS-S1-001 — Repositorio Java hexagonal
+- `iss-s1-001/01-mvn-clean-verify.txt` — `mvn clean verify`.
+- `iss-s1-001/02-package-tree.txt` — árbol de paquetes hexagonales.
+- `iss-s1-001/03-scan-repository.txt` — escaneo de secretos (TEST-S1-002).
 
----
+### ISS-S1-002 — Scripts base de infraestructura
+- `iss-s1-002/01-tests.txt`, `02-shellcheck.txt`, `03-validate-only.txt` — parámetros
+  obligatorios, ShellCheck y `--validate-only`. Ver `iss-s1-002/README.md`.
 
-## Actualización del Índice
+### ISS-S1-003 — Storage, contenedores y colas
+- `iss-s1-003/01..03` — validación local (validate-only, tests, ShellCheck).
+- `iss-s1-003/05-azure-provision.txt`, `06-azure-validation.txt`, `07-azure-idempotency.txt`,
+  `08-azure-resources-final.txt` — provisionamiento, validación e idempotencia en Azure real.
 
-Este índice debe actualizarse cada vez que se genere nueva evidencia:
+### ISS-S1-004 — App Service, Managed Identity y slot staging
+- `iss-s1-004/01-syntax-and-arm-render.txt`, `02-sku-validation.txt` — validación previa.
+- `iss-s1-004/03-provision-app-service.txt`, `04-validate-app-service.txt`,
+  `06-deploy-application.txt` — provisionamiento y despliegue.
 
-1. Agregar entrada con fecha, commit, run
-2. Verificar sanitización de IDs
-3. Confirmar que la evidencia es reproducible
-4. Hacer commit del cambio
+### ISS-S1-005 — Red privada y DNS
+- `iss-s1-005/02-provision-network.txt`, `03-configure-private-endpoints.txt`,
+  `04-validate-network.txt` — VNet, Private Endpoints y resolución privada.
+
+### ISS-S1-006 — Entra ID y RBAC
+- `iss-s1-006/01-syntax-and-approles.txt`, `02-provision-entra-app.txt`,
+  `03-assign-rbac.txt`, `04-validate-rbac.txt` — app roles, RBAC mínimo y validación.
+
+### ISS-S1-007 — Contrato de transacción
+- `iss-s1-007/01-required-tests.txt`, `02-full-test-suite.txt`, `03-openapi-lint.txt` —
+  pruebas obligatorias, suite completa y lint OpenAPI.
+- `iss-s1-007/examples/` — `valid-request.json`, `202-response.json`, `400-response.json`.
+
+### ISS-S1-008 — Persistencia en Blob
+- `iss-s1-008/runs/20260718T210504Z/` — unit test del caso de uso, IT de API, IT de Blob
+  (Azure), suite completa y escaneo de alcance.
+- IT MockMvc (`202`/`503`) ejecutadas localmente en la suite `mvn verify`.
+
+### ISS-S1-009 — Carga de documentos
+- `iss-s1-009/runs/20260718T214017Z/` — service test, IT de API/contrato, IT de Blob
+  documental (Azure), suite completa.
+- `iss-s1-009/examples/` — `201-response.json`, `400-response.json`, documento de ejemplo.
+
+### ISS-S1-010 — Roundtrip de Queue *(scripts OK · run Azure pendiente)*
+- `iss-s1-010/01-syntax-check.txt`, `iss-s1-010/README.md`.
+
+### ISS-S1-011 — Seguridad de endpoints
+- `iss-s1-011/01-endpoint-authorization-test.txt` — mapeo de roles (7/7).
+- `iss-s1-011/02-full-verify-suite.txt` — IT MockMvc `401`/`403`/`202`/`201`. Ver README.
+
+### ISS-S1-012 — Alta disponibilidad *(scripts OK · run Azure pendiente)*
+- `iss-s1-012/01-syntax-check.txt`, `iss-s1-012/README.md`.
+
+### ISS-S1-013 — Documentación y trazabilidad
+- `iss-s1-013/01-validate-documentation.txt`, `02-validate-week1-scope.txt`,
+  `03-scan-repository.txt`, `04-full-verify-suite.txt`. Ver README.
+
+### ISS-S1-014 — Cierre final *(scripts OK · run Azure pendiente)*
+- `final/01-syntax-check.txt`, `final/README.md`.
 
 ---
 
 ## Referencias
 
 - [Matriz de Trazabilidad](../5_Issues_y_Trazabilidad/2_Matriz_Trazabilidad.md)
-- [README Principal](../../README.md)
-- [Arquitectura](../2_Arquitectura/centinela-week1.md)
+- [README Principal](../../Readme.md)
+- [Arquitectura](../architecture/centinela-week1.md)

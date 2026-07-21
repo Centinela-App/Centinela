@@ -1,0 +1,63 @@
+# Salida ESPERADA de scripts/tests/validate-rbac.sh (agrega TEST-S1-008/009/010) en Cloud Shell.
+# (Ejecucion real la corre Persona 2/Persona 4 con `az login`; ver README.)
+
+$ ANALYST_PRINCIPAL_ID=<objectId-analista> bash scripts/tests/validate-rbac.sh
+[INFO] ==== Ejecutando: validate-entra-roles.sh ====
+
+============== ISS-S1-006 / TEST-S1-008 ==============
+PASS  App Registration 'cent-api-week1' existe (appId 1a2b…7f8e).
+PASS  App role 'SERVICE' existe y esta habilitado.
+PASS  App role 'ANALYST' existe y esta habilitado.
+PASS  App role 'ADMINISTRATOR' existe y esta habilitado.
+PASS  App role 'AUDITOR' existe y esta habilitado.
+PASS  La App expone exactamente 4 app roles.
+PASS  Rol SERVICE con allowedMemberTypes=Application (identidad de servicio).
+PASS  Rol ANALYST con allowedMemberTypes=User.
+PASS  Rol ADMINISTRATOR con allowedMemberTypes=User.
+PASS  Rol AUDITOR con allowedMemberTypes=User.
+------------------------------------------------------
+Resumen: 10 PASS / 0 FAIL
+======================================================
+[INFO] ==== validate-entra-roles.sh: OK ====
+[INFO] ==== Ejecutando: validate-managed-identity.sh ====
+
+============== ISS-S1-006 / TEST-S1-010 ==============
+PASS  Produccion tiene Managed Identity.
+PASS  Staging tiene Managed Identity.
+PASS  MI produccion puede escribir Blob en 'raw-transactions-production' (rol de datos, sin claves).
+PASS  MI produccion puede escribir Blob en 'verification-documents-production' (rol de datos, sin claves).
+PASS  MI staging puede escribir Blob en 'raw-transactions-staging' (rol de datos, sin claves).
+PASS  MI staging puede escribir Blob en 'verification-documents-staging' (rol de datos, sin claves).
+PASS  MI produccion NO tiene ningun rol de Queue (correcto: cola fuera del negocio S1).
+PASS  MI produccion sin roles de administracion (Owner/Contributor/UAA).
+PASS  MI staging NO tiene ningun rol de Queue (correcto: cola fuera del negocio S1).
+PASS  MI staging sin roles de administracion (Owner/Contributor/UAA).
+------------------------------------------------------
+Resumen: 10 PASS / 0 FAIL
+======================================================
+[INFO] ==== validate-managed-identity.sh: OK ====
+[INFO] ==== Ejecutando: test-analyst-rbac.sh ====
+
+============== ISS-S1-006 / TEST-S1-009 ==============
+PASS  Analista no tiene ningun rol de escritura/administracion (no puede modificar Azure).
+PASS  Analista tiene 'Reader' (consulta sin modificacion).
+------------------------------------------------------
+Resumen: 2 PASS / 0 FAIL / 0 PENDIENTE
+======================================================
+[INFO] ==== test-analyst-rbac.sh: OK ====
+[INFO] ==== Escaneo de asignaciones Owner/Contributor en el Resource Group ====
+[INFO] Sin asignaciones Owner/Contributor a nivel de Resource Group.
+
+[INFO] ISS-S1-006 RBAC: TODAS las validaciones agregadas pasaron.
+
+# --- Gherkin "Analista sin modificacion" (intento real, opcional) --------------
+$ ANALYST_PRINCIPAL_ID=<id> bash scripts/tests/test-analyst-rbac.sh --live-attempt
+# (ejecutado con la sesion del Analista)
+PASS  Analista: intento de modificacion DENEGADO por Azure (esperado).
+
+# --- Gherkin "Permiso excesivo detectado" -------------------------------------
+# Si el Analista tuviera Contributor, TEST-S1-009 falla e identifica la asignacion:
+#   FAIL  Analista tiene permiso EXCESIVO: Contributor (Gherkin: asignacion prohibida).
+
+# Nota: sin ANALYST_PRINCIPAL_ID, TEST-S1-009 marca PEND (pendiente) y documenta que
+# requiere el principal del Analista para cerrarse; no rompe las otras validaciones.

@@ -9,13 +9,33 @@ source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/parameters.sh"
 
 ASSUME_YES=0
+KEEP_ENTRA=0
 for arg in "$@"; do
   case "$arg" in
     --yes|--force) ASSUME_YES=1 ;;
-    -h|--help) echo "Uso: $0 [--yes]"; exit 0 ;;
+    --keep-entra)  KEEP_ENTRA=1 ;;   # no eliminar la App Registration de ISS-S1-006
+    -h|--help) echo "Uso: $0 [--yes] [--keep-entra]"; exit 0 ;;
     *) die "Argumento desconocido: $arg" ;;
   esac
 done
+
+# La App Registration de Entra (ISS-S1-006) es de nivel de tenant: NO vive dentro
+# del Resource Group, por lo que borrar el RG no la elimina. La limpiamos aparte
+# para que "destruir, reconstruir, limpiar" (TEST-S1-027) quede realmente limpio.
+cleanup_entra_app() {
+  [ "$KEEP_ENTRA" -eq 1 ] && { log_info "--keep-entra: se conserva la App Registration de Entra."; return 0; }
+  local display_name app_id
+  display_name="${ENTRA_APP_DISPLAY_NAME:-${NAME_PREFIX}-api-week1}"
+  app_id="$(az ad app list --display-name "$display_name" --query "[0].appId" -o tsv 2>/dev/null || true)"
+  if [ -z "$app_id" ] || [ "$app_id" = "None" ]; then
+    log_info "No hay App Registration '$display_name' que eliminar."
+    return 0
+  fi
+  log_warn "Eliminando App Registration '$display_name' (appId $(mask "$app_id")) y su Service Principal..."
+  az ad app delete --id "$app_id" >/dev/null 2>&1 \
+    && log_info "App Registration eliminada." \
+    || log_warn "No se pudo eliminar la App Registration (¿permisos de directorio?). Eliminala manualmente."
+}
 
 main() {
   load_parameters
@@ -32,12 +52,17 @@ main() {
   fi
 
   require_cmd az
-  if ! az group show --name "$RESOURCE_GROUP" >/dev/null 2>&1; then
-    log_info "El Resource Group '$RESOURCE_GROUP' no existe. Nada que eliminar."; return 0
+  if az group show --name "$RESOURCE_GROUP" >/dev/null 2>&1; then
+    log_info "Eliminando Resource Group '$RESOURCE_GROUP'..."
+    az group delete --name "$RESOURCE_GROUP" --yes --no-wait
+    log_info "Eliminacion del RG iniciada (--no-wait). Incluye Storage, App Service,"
+    log_info "red, Managed Identities y sus asignaciones RBAC (incluida la de prueba de cola)."
+  else
+    log_info "El Resource Group '$RESOURCE_GROUP' no existe. Nada que eliminar en el RG."
   fi
-  log_info "Eliminando Resource Group '$RESOURCE_GROUP'..."
-  az group delete --name "$RESOURCE_GROUP" --yes --no-wait
-  log_info "Eliminacion iniciada (--no-wait)."
+
+  # Limpieza tenant-level de la App Registration (fuera del RG).
+  cleanup_entra_app
 }
 
 main

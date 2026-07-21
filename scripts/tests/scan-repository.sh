@@ -6,7 +6,7 @@
 # gate en CI (capa 4). Excluye:
 #   - .git, target, .idea  -> ruido de build/VCS/IDE
 #   - *.md, *.html         -> la documentacion menciona estos patrones como ejemplo
-#   - este mismo script    -> contiene los patrones que busca
+#   - los scripts de escaneo -> contienen los patrones que buscan como cadenas
 # El escaneo profundo de secretos reales lo hace gitleaks en CI (capa 4).
 #
 set -euo pipefail
@@ -19,7 +19,8 @@ if grep -RInE "${PATTERNS}" . \
         --exclude-dir=.idea \
         --exclude='*.md' \
         --exclude='*.html' \
-        --exclude='scan-repository.sh'; then
+        --exclude='scan-repository.sh' \
+        --exclude='validate-week1-scope.sh'; then
     echo "ERROR: posible secreto o cadena de conexion detectada arriba." >&2
     exit 1
 fi

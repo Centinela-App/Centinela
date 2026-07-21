@@ -37,3 +37,14 @@ bash scripts/tests/test-destroy-rebuild-cleanup.sh
 ## Actualización del Índice
 
 Después de cada run, actualizar `docs/evidence/INDEX.md` con la referencia al run.
+
+## Estado de la prueba de cierre (ISS-S1-014)
+
+- **Scripts:** completos (`test-clean-deploy.sh`, `test-destroy-rebuild-cleanup.sh`) y
+  `deploy-week1.sh` / `destroy-week1.sh` reintegrados tras el revert del PR #26 (incluida
+  la limpieza tenant-level de la App Registration de Entra en `destroy-week1.sh`).
+- **Verificación local reproducible:** `01-syntax-check.txt` — `bash -n` OK en todos los
+  scripts de despliegue, destrucción y validación.
+- **Run final destrucción → reconstrucción → limpieza:** requiere una suscripción Azure
+  activa. Genera `deployment.log`, `validation-summary.md`, `resource-inventory.json` y
+  `cleanup.log` bajo `run-{timestamp}/`. No se fabrica evidencia de Azure (regla del DoD).

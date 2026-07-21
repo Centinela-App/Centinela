@@ -94,24 +94,33 @@ check_no_multiregion() {
   fi
 }
 
-# Check: No hay deployment slots configurados
-check_no_slots() {
-  log_info "Verificando ausencia de deployment slots..."
-  
-  if grep -r "deployment slot" scripts/ 2>/dev/null | grep -v "week2\|Semana 2" >/dev/null 2>&1; then
-    log_error "  [FAIL] Deployment slots configurados"
+# Check: No hay multi-slot / blue-green avanzado (el slot 'staging' de ISS-S1-004
+# SÍ es alcance de Semana 1, por eso no se prohíbe un único slot staging).
+check_no_advanced_slots() {
+  log_info "Verificando ausencia de slots avanzados (blue-green / multi-slot)..."
+
+  # Solo cuenta implementacion real: el flag de swap por fases (blue-green avanzado)
+  # o un segundo slot de produccion. Se ignoran comentarios (que solo mencionan que
+  # NO se hace) y los propios scripts de escaneo.
+  if grep -rEi "swap-with-preview|slot(s)?-(prod|production)-[0-9]" scripts/ 2>/dev/null \
+       --exclude='validate-week1-scope.sh' \
+       | grep -vE ":[0-9]+:[[:space:]]*#" | grep -v "week2\|Semana 2" >/dev/null 2>&1; then
+    log_error "  [FAIL] Estrategia de slots avanzada (fuera de alcance Semana 1)"
     FAILED_CHECKS=$((FAILED_CHECKS + 1))
   else
-    log_info "  [OK] Sin deployment slots"
+    log_info "  [OK] Solo el slot staging previsto en Semana 1"
   fi
 }
 
 # Check: Storage sigue privado
 check_storage_private() {
   log_info "Verificando que Storage sea privado..."
-  
-  # Verificar que no hay Account Key en scripts
-  if grep -rE "AccountKey=|DefaultEndpointsProtocol.*AccountKey" scripts/ 2>/dev/null | grep -v "\.example\|#.*AccountKey" >/dev/null 2>&1; then
+
+  # Verificar que no hay Account Key en scripts. Se excluyen los propios scripts
+  # de escaneo (contienen el patron como cadena de busqueda, no como secreto).
+  if grep -rE "AccountKey=|DefaultEndpointsProtocol.*AccountKey" scripts/ 2>/dev/null \
+       --exclude='validate-week1-scope.sh' --exclude='scan-repository.sh' \
+       | grep -v "\.example\|#.*AccountKey" >/dev/null 2>&1; then
     log_error "  [FAIL] Account Key encontrada en scripts"
     FAILED_CHECKS=$((FAILED_CHECKS + 1))
   else
@@ -130,7 +139,7 @@ main() {
   check_no_scoring
   check_no_event_consumer
   check_no_multiregion
-  check_no_slots
+  check_no_advanced_slots
   check_storage_private
   
   log_info "========================================"

@@ -17,6 +17,21 @@
 - La aplicación no necesita permiso de Queue Storage porque la cola no forma parte del flujo de negocio de Semana 1.
 - La identidad que ejecuta la prueba temporal de cola recibe el permiso mínimo y se revoca al finalizar si fue asignado solo para la prueba.
 
+## Identificadores técnicos (ISS-S1-006)
+
+Concretados por los scripts `scripts/provision-entra-app.sh` y `scripts/assign-rbac.sh`:
+
+| Elemento | Valor / identificador | Notas |
+|---|---|---|
+| App Registration (API) | `<NAME_PREFIX>-api-week1` (override: `ENTRA_APP_DISPLAY_NAME`) | `identifierUri = api://<appId>`; sin secreto de cliente. |
+| App roles (`value`) | `SERVICE`, `ANALYST`, `ADMINISTRATOR`, `AUDITOR` | `SERVICE` → `allowedMemberTypes=[Application]`; resto → `[User]`. |
+| Rol de datos de la Managed Identity | `Storage Blob Data Contributor` | Acotado por **contenedor** (prod → `*-production`, staging → `*-staging`). |
+| Rol de la prueba de cola (temporal) | `Storage Queue Data Message Processor` | Solo para el roundtrip de ISS-S1-010; se revoca con `assign-rbac.sh --revoke-queue-test`. |
+| Roles funcionales demo | `Reader` (Analista/Auditor) | Alcance Resource Group; solo si se pasan sus `principalId`. |
+
+Regla dura aplicada por `assign-rbac.sh`: nunca asigna `Owner`, `Contributor` ni
+`User Access Administrator` (guard explícito).
+
 ## Secretos
 
 - Se usa Managed Identity siempre que sea posible.

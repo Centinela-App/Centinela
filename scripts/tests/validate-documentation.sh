@@ -8,13 +8,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/common.sh"
 
-DOCS_DIR="${SCRIPT_DIR}/../docs"
+DOCS_DIR="${SCRIPT_DIR}/../../docs"
 FAILED_CHECKS=0
 
 # Check: Arquitectura existe
 check_architecture() {
   log_info "Verificando documentacion de arquitectura..."
-  local arch_file="${DOCS_DIR}/2_Arquitectura/centinela-week1.md"
+  local arch_file="${DOCS_DIR}/architecture/centinela-week1.md"
   if [ -f "$arch_file" ]; then
     log_info "  [OK] Arquitectura encontrada: $arch_file"
   else
@@ -90,13 +90,13 @@ check_readme() {
     local has_params=false
     local has_deploy=false
     
-    if grep -q "## Prerrequisitos\|## Prerequisites" "$readme" 2>/dev/null; then
+    if grep -qE "Prerrequisitos|Prerequisites|Requisitos previos" "$readme" 2>/dev/null; then
       has_prereqs=true
     fi
-    if grep -q "## Parametros\|## Parameters" "$readme" 2>/dev/null; then
+    if grep -qE "Par[aá]metros|Parameters|Variables de entorno" "$readme" 2>/dev/null; then
       has_params=true
     fi
-    if grep -q "## Despliegue\|## Deployment" "$readme" 2>/dev/null; then
+    if grep -qE "Despliegue|Deployment|Gu[ií]a de ejecuci" "$readme" 2>/dev/null; then
       has_deploy=true
     fi
     

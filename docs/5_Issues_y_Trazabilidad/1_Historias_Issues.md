@@ -907,6 +907,8 @@ src/main/java/com/centinela/transactioningestion/application/port/in/IngestTrans
 src/main/java/com/centinela/transactioningestion/application/command/IngestTransactionCommand.java
 src/main/java/com/centinela/transactioningestion/infrastructure/web/TransactionController.java
 src/main/java/com/centinela/transactioningestion/infrastructure/web/dto/TransactionRequest.java
+src/main/java/com/centinela/transactioningestion/infrastructure/web/dto/LocationRequest.java
+src/main/java/com/centinela/transactioningestion/infrastructure/web/dto/MerchantRequest.java
 src/main/java/com/centinela/transactioningestion/infrastructure/web/dto/TransactionReceiptResponse.java
 src/main/java/com/centinela/transactioningestion/infrastructure/web/mapper/TransactionWebMapper.java
 src/main/java/com/centinela/shared/web/ApiExceptionHandler.java
@@ -916,6 +918,11 @@ src/test/java/com/centinela/transactioningestion/infrastructure/web/TransactionC
 src/test/java/com/centinela/transactioningestion/contract/OpenApiContractTest.java
 src/test/java/com/centinela/transactioningestion/infrastructure/web/dto/TransactionRequestValidationTest.java
 src/test/java/com/centinela/transactioningestion/infrastructure/web/TransactionWebMapperTest.java
+docs/evidence/iss-s1-007/README.md
+docs/evidence/iss-s1-007/capture-evidence.sh
+docs/evidence/iss-s1-007/examples/valid-request.json
+docs/evidence/iss-s1-007/examples/202-response.json
+docs/evidence/iss-s1-007/examples/400-response.json
 ```
 
 ### 6. Archivos que pueden modificarse
@@ -924,6 +931,7 @@ src/test/java/com/centinela/transactioningestion/infrastructure/web/TransactionW
 openapi-centinela-semana1.yaml
 1_Requisitos_y_Contrato/3_API_OpenAPI.md
 pom.xml solo si falta una dependencia ya aprobada.
+5_Issues_y_Trazabilidad/1_Historias_Issues.md solo para registrar los DTO separados y la evidencia autorizada.
 ```
 
 ### 7. Archivos prohibidos
@@ -988,8 +996,8 @@ Escenario: Campo futuro no permitido
 ### 12. Comandos de validación
 
 ```bash
-mvn -Dtest=TransactionControllerValidationTest test
-npx @redocly/cli lint openapi-centinela-semana1.yaml
+mvn -Dtest=TransactionControllerValidationTest,OpenApiContractTest,TransactionRequestValidationTest,TransactionWebMapperTest test
+npx @redocly/cli lint docs/1_Requisitos_y_Contrato/openapi-centinela-semana1.yaml
 ```
 
 ### 13. Evidencia esperada
@@ -1043,26 +1051,30 @@ Semana 1 conserva la transacción sin ejecutar análisis. El adaptador debe usar
 ### 5. Archivos que deben crearse
 
 ```text
+src/main/java/com/centinela/transactioningestion/application/exception/StorageUnavailableException.java
 src/main/java/com/centinela/transactioningestion/application/port/out/RawTransactionStoragePort.java
 src/main/java/com/centinela/transactioningestion/application/service/IngestTransactionService.java
 src/main/java/com/centinela/transactioningestion/infrastructure/azure/blob/AzureRawTransactionBlobAdapter.java
 src/main/java/com/centinela/transactioningestion/infrastructure/azure/blob/RawTransactionBlobProperties.java
 src/main/java/com/centinela/transactioningestion/infrastructure/azure/blob/BlobPathFactory.java
+src/main/java/com/centinela/transactioningestion/infrastructure/config/TransactionIngestionConfiguration.java
 src/test/java/com/centinela/transactioningestion/application/service/IngestTransactionServiceTest.java
 src/test/java/com/centinela/transactioningestion/infrastructure/azure/blob/AzureRawTransactionBlobAdapterIT.java
 src/test/java/com/centinela/transactioningestion/infrastructure/web/TransactionApiIT.java
-
 src/test/java/com/centinela/transactioningestion/infrastructure/web/TransactionApiValidationIT.java
 scripts/tests/test-transaction-e2e.sh
 scripts/tests/test-environment-isolation.sh
+docs/evidence/iss-s1-008/**
 ```
 
 ### 6. Archivos que pueden modificarse
 
 ```text
+pom.xml únicamente para agregar `azure-identity` bajo el BOM existente.
 TransactionController.java
 ApiExceptionHandler.java
 application*.yml únicamente con nombres no secretos de configuración.
+docs/5_Issues_y_Trazabilidad/1_Historias_Issues.md únicamente para autorizar estas correcciones de alcance.
 ```
 
 ### 7. Archivos prohibidos
@@ -1129,7 +1141,9 @@ Escenario: Aislamiento por ambiente
 
 ```bash
 mvn -Dtest=IngestTransactionServiceTest test
-mvn -Dtest=TransactionApiIT,AzureRawTransactionBlobAdapterIT verify
+mvn -Dtest=TransactionApiIT,TransactionApiValidationIT test
+CENTINELA_RUN_AZURE_IT=true mvn -Dtest=AzureRawTransactionBlobAdapterIT verify
+mvn test
 ```
 
 ### 13. Evidencia esperada
@@ -1137,6 +1151,7 @@ mvn -Dtest=TransactionApiIT,AzureRawTransactionBlobAdapterIT verify
 - Respuesta HTTP y ubicación del Blob.
 - Contenido sanitizado del Blob.
 - Reporte de pruebas unitarias e integración.
+- Ejecución Azure sin pruebas omitidas y limpieza del Blob sintético.
 
 ### 14. Instrucción para una IA o integrante
 
@@ -1183,6 +1198,9 @@ La Semana 1 solo demuestra almacenamiento documental. No existe `caseId`, flujo 
 ### 5. Archivos que deben crearse
 
 ```text
+src/main/java/com/centinela/documentstorage/application/command/StoreVerificationDocumentCommand.java
+src/main/java/com/centinela/documentstorage/application/exception/InvalidVerificationDocumentException.java
+src/main/java/com/centinela/documentstorage/application/exception/DocumentStorageUnavailableException.java
 src/main/java/com/centinela/documentstorage/application/port/in/StoreVerificationDocumentUseCase.java
 src/main/java/com/centinela/documentstorage/application/port/out/VerificationDocumentStoragePort.java
 src/main/java/com/centinela/documentstorage/application/service/StoreVerificationDocumentService.java
@@ -1190,10 +1208,14 @@ src/main/java/com/centinela/documentstorage/domain/model/VerificationDocument.ja
 src/main/java/com/centinela/documentstorage/infrastructure/web/VerificationDocumentController.java
 src/main/java/com/centinela/documentstorage/infrastructure/web/dto/DocumentReceiptResponse.java
 src/main/java/com/centinela/documentstorage/infrastructure/azure/blob/AzureVerificationDocumentBlobAdapter.java
+src/main/java/com/centinela/documentstorage/infrastructure/config/DocumentStorageConfiguration.java
 src/test/java/com/centinela/documentstorage/application/StoreVerificationDocumentServiceTest.java
 src/test/java/com/centinela/documentstorage/infrastructure/web/VerificationDocumentApiIT.java
+src/test/java/com/centinela/documentstorage/infrastructure/azure/blob/AzureVerificationDocumentBlobAdapterIT.java
+src/test/java/com/centinela/documentstorage/contract/VerificationDocumentOpenApiContractTest.java
 
 scripts/tests/test-document-upload-e2e.sh
+docs/evidence/iss-s1-009/**
 ```
 
 ### 6. Archivos que pueden modificarse
@@ -1267,14 +1289,17 @@ Escenario: Nombre peligroso
 
 ```bash
 mvn -Dtest=StoreVerificationDocumentServiceTest test
-mvn -Dtest=VerificationDocumentApiIT verify
+mvn -Dtest=VerificationDocumentApiIT,VerificationDocumentOpenApiContractTest test
+mvn -Dtest=AzureVerificationDocumentBlobAdapterIT verify
+mvn test
 ```
 
 ### 13. Evidencia esperada
 
-- Respuesta `201`.
-- Ubicación y metadatos del Blob documental.
-- Pruebas de archivo ausente y nombre normalizado.
+- Respuesta `201` de la integración HTTP local.
+- Escritura, lectura, tamaño y limpieza del Blob documental en Azure.
+- Pruebas de archivo ausente, vacío y nombre normalizado.
+- Trazabilidad explícita de `TEST-S1-019`, `TEST-S1-022` y `TEST-S1-023` como pruebas posteriores.
 
 ### 14. Instrucción para una IA o integrante
 

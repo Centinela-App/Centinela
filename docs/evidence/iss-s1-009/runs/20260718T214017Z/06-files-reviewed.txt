@@ -1,0 +1,17 @@
+ M docs/1_Requisitos_y_Contrato/3_API_OpenAPI.md
+ M docs/1_Requisitos_y_Contrato/openapi-centinela-semana1.yaml
+ M docs/5_Issues_y_Trazabilidad/1_Historias_Issues.md
+ M src/main/java/com/centinela/shared/web/ApiExceptionHandler.java
+ M src/main/resources/application-test.yml
+ M src/main/resources/application.yml
+?? docs/evidence/iss-s1-009/
+?? scripts/tests/test-document-upload-e2e.sh
+?? src/main/java/com/centinela/documentstorage/application/command/
+?? src/main/java/com/centinela/documentstorage/application/exception/
+?? src/main/java/com/centinela/documentstorage/application/port/
+?? src/main/java/com/centinela/documentstorage/application/service/
+?? src/main/java/com/centinela/documentstorage/domain/model/
+?? src/main/java/com/centinela/documentstorage/infrastructure/azure/
+?? src/main/java/com/centinela/documentstorage/infrastructure/config/
+?? src/main/java/com/centinela/documentstorage/infrastructure/web/
+?? src/test/java/com/centinela/documentstorage/

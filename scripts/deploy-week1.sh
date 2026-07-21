@@ -24,6 +24,8 @@ PROVISION_STEPS=(
   "provision-app-service.sh"        # ISS-S1-004
   "provision-network.sh"            # ISS-S1-005
   "configure-private-endpoints.sh"  # ISS-S1-005
+  "provision-entra-app.sh"          # ISS-S1-006 (Entra ID: 4 app roles + SP)
+  "assign-rbac.sh"                  # ISS-S1-006 (RBAC minimo: Blob Data a la MI)
 )
 
 main() {

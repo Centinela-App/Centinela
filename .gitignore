@@ -2,6 +2,7 @@
 .env
 *.env
 !.env.example
+/env
 *.pem
 *.key
 *secret*
@@ -15,3 +16,6 @@ target/
 
 # === Logs y temporales ===
 *.log
+# Excepcion: los logs de evidencia SANITIZADOS de la prueba de cierre (ISS-S1-014)
+# si se versionan (deployment.log, cleanup.log bajo docs/evidence/final/<runId>/).
+!docs/evidence/**/*.log
