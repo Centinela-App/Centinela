@@ -15,20 +15,3 @@ management:
     health:
       probes:
         enabled: true
-
-centinela:
-  storage:
-    blob:
-      account-name: ${CENTINELA_STORAGE_ACCOUNT}
-      container-name: ${CENTINELA_RAW_TRANSACTIONS_CONTAINER}
-    documents:
-      account-name: ${CENTINELA_STORAGE_ACCOUNT}
-      container-name: ${CENTINELA_VERIFICATION_DOCUMENTS_CONTAINER}
-  security:
-    entra:
-      # Issuer, audience y JWK set URI de la app registration en Entra ID.
-      # Ninguno de estos valores es secreto; se inyectan como app settings
-      # del App Service (ISS-004), nunca versionados con valores reales.
-      issuer-uri: ${CENTINELA_ENTRA_ISSUER_URI}
-      audience: ${CENTINELA_ENTRA_AUDIENCE}
-      jwk-set-uri: ${CENTINELA_ENTRA_JWK_SET_URI}
