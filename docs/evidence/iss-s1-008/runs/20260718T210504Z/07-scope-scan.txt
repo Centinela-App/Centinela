@@ -1,2 +1,0 @@
-src/main/java/com/centinela/transactioningestion/domain/model/Transaction.java:9: * <p>No contiene score, decision, reglas activadas ni identificadores de caso.
-src/main/java/com/centinela/transactioningestion/infrastructure/web/dto/TransactionRequest.java:25:    /** Rechaza score, caseId y cualquier propiedad no declarada. */

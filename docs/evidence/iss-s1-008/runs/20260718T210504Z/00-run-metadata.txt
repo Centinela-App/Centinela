@@ -1,6 +1,0 @@
-issue=ISS-S1-008
-runId=20260718T210504Z
-timestampUtc=2026-07-18T21:05:04Z
-commit=3498c6f79cbce303a683dfe57525cf72872f2f85
-environmentContainer=raw-transactions-staging
-storageAccount=cent****
