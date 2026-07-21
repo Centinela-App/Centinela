@@ -1,0 +1,17 @@
+{
+  "transactionId": "tx-1001",
+  "accountId": "acc-2001",
+  "amount": 125000.50,
+  "currency": "COP",
+  "occurredAt": "2026-07-18T15:30:00-05:00",
+  "location": {
+    "countryCode": "CO",
+    "city": "Bogota",
+    "latitude": 4.7110,
+    "longitude": -74.0721
+  },
+  "merchant": {
+    "name": "Comercio de prueba",
+    "category": "RETAIL"
+  }
+}

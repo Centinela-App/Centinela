@@ -1,0 +1,9 @@
+# Configuracion LOCAL de Centinela — Semana 1
+# ⚠️ Este archivo contiene valores reales y NUNCA debe commitearse.
+#    Esta protegido por .gitignore. La plantilla publica es .env.example.
+
+SUBSCRIPTION_ID="44dc85d0-5df9-46bb-a378-6f629c803999"
+LOCATION="eastus2"
+RESOURCE_GROUP="rg-centinela-week1"
+NAME_PREFIX="cent"
+APP_SERVICE_SKU="S1"

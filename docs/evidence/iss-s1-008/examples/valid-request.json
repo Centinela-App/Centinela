@@ -1,0 +1,15 @@
+{
+  "transactionId": "tx-evidence-1001",
+  "accountId": "acct-synthetic-2001",
+  "amount": 150000.50,
+  "currency": "COP",
+  "occurredAt": "2026-07-18T10:00:00-05:00",
+  "location": {
+    "countryCode": "CO",
+    "city": "Bogota"
+  },
+  "merchant": {
+    "name": "Comercio Sintetico",
+    "category": "RETAIL"
+  }
+}
