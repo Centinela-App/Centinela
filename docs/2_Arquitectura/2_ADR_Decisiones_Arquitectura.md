@@ -111,3 +111,43 @@ Este documento responde a los tres puntos, más las decisiones transversales de 
 ## Decisiones deliberadamente abiertas para Semana 2
 
 No se deciden todavía (esperan `Azure-Semana2.md`): qué componente consume la cola, qué servicio serverless se usa, el formato final del evento de scoring, si la cola actual evoluciona a otro servicio de mensajería, qué almacén guarda el historial de transacciones, qué base de datos gestiona los casos, las reglas/puntuaciones/umbral, y la estructura del caso de fraude.
+
+---
+
+# Decisiones de Semana 2
+
+## ADR-007 — Almacén de transacciones: Cosmos DB for MongoDB (partición, consistencia, TTL)
+
+**Contexto.** El motor de scoring ejecuta, en cada transacción, una consulta dominante:
+*"dame las transacciones recientes de esta cuenta"*. El perfil es escritura constante de alto
+volumen y esa lectura por cuenta. El enunciado exige elegir clave de partición, nivel de
+consistencia y política de expiración, y **justificar** cada una. La clave de partición **no
+se puede cambiar tras la primera escritura** sin migrar todos los datos.
+
+**Decisión.**
+
+| Parámetro | Valor elegido | Justificación |
+|---|---|---|
+| **Servicio** | Cosmos DB for MongoDB (Free Tier) | API MongoDB (el equipo domina Mongo); Free Tier da 1000 RU/s + 25 GB sin costo. |
+| **Clave de partición (shard key)** | `accountId` | La consulta dominante filtra por cuenta. Con `accountId` como partición, el historial de una cuenta vive en **una sola partición** → la lectura no recorre particiones ajenas y su costo (RU) es estable con el volumen. |
+| **Consistencia** | `Session` | Compromiso equilibrado: dentro de la sesión que escribe y luego lee (la propia Function tras persistir), garantiza *read-your-writes* sin el costo de latencia de `Strong`. El scoring no requiere consistencia global fuerte: opera sobre el historial reciente de una cuenta, no sobre una vista transaccional global. |
+| **Expiración (TTL)** | 90 días (`7 776 000 s`), configurable | Cubre con margen la ventana más larga que usan las reglas (velocidad = minutos; monto atípico = comportamiento histórico de semanas). Pasado ese periodo, el registro deja de aportar al scoring y se elimina solo, manteniendo el almacén dentro del Free Tier. |
+
+**Qué se optimiza y qué se sacrifica.** Se optimiza la consulta *"historial de una cuenta"*
+(la que corre en cada scoring). Se **sacrifica** la consulta *"todas las transacciones de un
+comercio / de un rango de fechas global"*: esa sí recorrería varias particiones. Es un
+sacrificio aceptable porque no está en el camino crítico del scoring.
+
+**Alternativas descartadas.**
+- *Particionar por `transactionId`*: distribuye perfecto la escritura, pero para leer el
+  historial de una cuenta habría que consultar **todas** las particiones (fan-out) → costo de
+  RU que crece con el volumen y falla en producción aunque funcione en pruebas.
+- *Particionar por fecha (`yyyy/MM/dd`)*: bueno para consultas por rango temporal global, pero
+  la consulta por cuenta seguiría siendo cross-partition. No sirve al camino crítico.
+- *Azure Table Storage*: más barato, pero sin niveles de consistencia configurables ni TTL
+  nativo por documento; cumpliría con dificultad los requisitos de consistencia y expiración.
+
+**Consecuencia.** La forma del documento de transacción y la partición quedan **congeladas
+antes de la primera escritura**. Cambiar la shard key en Semana 3 obligaría a una migración
+completa. El adaptador Java de lectura (ISS-S2-007) debe consultar **siempre** filtrando por
+`accountId` para respetar el diseño.

@@ -1,5 +1,7 @@
 # ADR-003: Private Storage
 
+> **Fuente canónica:** este es el ADR resumido de Semana 1. El registro de decisiones detallado y vivo (ADR-001…006, con contexto, alternativas y consecuencias) es [`docs/2_Arquitectura/2_ADR_Decisiones_Arquitectura.md`](../2_Arquitectura/2_ADR_Decisiones_Arquitectura.md). Ante cualquier discrepancia, ese documento prevalece.
+
 ## Contexto
 
 Requerimiento de que el Storage Account no tenga puntos de acceso públicos. Toda comunicación debe fluir dentro de la VNet privada.
