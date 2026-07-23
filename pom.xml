@@ -97,6 +97,24 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
+
+            <!-- Ejecuta las pruebas de integracion (*IT) en la fase verify. Las IT
+                 contra Azure real estan protegidas con @EnabledIfEnvironmentVariable
+                 (CENTINELA_RUN_AZURE_IT / CENTINELA_RUN_AZURE_DOCUMENT_IT), por lo que
+                 se omiten cuando no hay suscripcion; las IT MockMvc (401/403/202/201)
+                 corren siempre y cierran las pruebas posteriores locales de Semana 1. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>

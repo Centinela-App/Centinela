@@ -10,8 +10,8 @@ OK sintaxis: scripts/destroy-week1.sh
 
 # App roles generados (offline) — 4 roles, ids deterministas y unicos:
 JSON VALIDO (4 roles):
-  SERVICE        allowedMemberTypes=["Application"]  id=9d3b5fa9-5460-526e-9ece-e291a090da5e
-  ANALYST        allowedMemberTypes=["User"]  id=b0fcb472-8e81-5876-9250-0d620bcd3a29
-  ADMINISTRATOR  allowedMemberTypes=["User"]  id=c0b5f1c4-8929-506a-9649-9a58e6e7eda2
-  AUDITOR        allowedMemberTypes=["User"]  id=0d5e3682-6520-5f0d-962d-d92cddca0208
+  SERVICE        allowedMemberTypes=["Application"]  id=9d3b…da5e
+  ANALYST        allowedMemberTypes=["User"]  id=b0fc…3a29
+  ADMINISTRATOR  allowedMemberTypes=["User"]  id=c0b5…eda2
+  AUDITOR        allowedMemberTypes=["User"]  id=0d5e…0208
 ids unicos: true

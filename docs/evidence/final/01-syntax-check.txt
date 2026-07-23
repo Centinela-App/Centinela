@@ -1,0 +1,8 @@
+# TEST-S1-026 / TEST-S1-027 — verificación de sintaxis local (bash -n)
+# Fecha: 2026-07-21T14:17:06Z
+
+OK  scripts/tests/test-clean-deploy.sh
+OK  scripts/tests/test-destroy-rebuild-cleanup.sh
+OK  scripts/deploy-week1.sh
+OK  scripts/destroy-week1.sh
+OK  scripts/validate-week1.sh
