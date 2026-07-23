@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centinela.app/schemas/transaction-event-v1.json",
+  "title": "transaction-event-v1",
+  "description": "Evento emitido por la API tras persistir una transaccion cruda. Notifica la ocurrencia (API -> Event Grid -> Function). NO transporta score ni decision: el motor de scoring calcula eso mas tarde a partir del historial.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "transactionId",
+    "accountId",
+    "occurredAt",
+    "blobPath",
+    "schemaVersion"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Identificador unico del evento. Metadato minimo para trazabilidad y correlacion."
+    },
+    "transactionId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identificador de la transaccion que origino el evento."
+    },
+    "accountId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Cuenta duena de la transaccion. Es la clave de particion que la Function usa para leer el historial."
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Momento en que ocurrio la transaccion (RFC 3339)."
+    },
+    "blobPath": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Ubicacion del JSON crudo en Blob Storage (contenedor/ruta 'yyyy/MM/dd/{transactionId}.json'). La Function lo lee para puntuar."
+    },
+    "schemaVersion": {
+      "type": "string",
+      "const": "transaction-event-v1",
+      "description": "Discriminador de version del contrato. Permite evolucion compatible."
+    }
+  }
+}

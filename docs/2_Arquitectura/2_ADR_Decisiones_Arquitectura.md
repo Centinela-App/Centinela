@@ -96,6 +96,17 @@ Este documento responde a los tres puntos, más las decisiones transversales de 
 
 **Consecuencia.** No hay secretos que rotar ni fugar. Si Semana 2 introduce un secreto externo real (p. ej. clave de un proveedor de IA), entonces —y solo entonces— se añade Key Vault.
 
+> **Revisión — Semana 2 (ISS-S2-003).** La condición prevista **se cumplió**: **Cosmos DB
+> for MongoDB** (ADR-007) autentica su plano de datos con una **connection string/key** —la
+> API Mongo (RU) **no** soporta Microsoft Entra ID para el wire protocol—, por lo que aparece
+> un **secreto real e inevitable**. En consecuencia se crea el **Key Vault** (RBAC data plane,
+> soft-delete + purge protection) y se migra ese único secreto. **El principio se mantiene:**
+> PostgreSQL (ADR/ISS-S2-002) usa **Entra ID exclusiva** (sin password de conexión) y Event
+> Grid publica por **Managed Identity**; las apps se autentican **al vault** por Managed
+> Identity (`Key Vault Secrets User`) — no existe "una credencial para obtener credenciales".
+> ADR-005 queda **parcialmente derogada**: sí hay Key Vault, pero solo por un secreto real,
+> nunca "por si acaso".
+
 ---
 
 ## ADR-006 — Stack y estructura interna

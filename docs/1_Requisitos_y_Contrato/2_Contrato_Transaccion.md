@@ -43,3 +43,11 @@ No se agrega `caseId` en Semana 1.
 - Colas: `transactions-ingestion-staging` y `transactions-ingestion-production`.
 - En Semana 1 solo se usa un mensaje temporal de conectividad.
 - El contrato de negocio de la cola se define en Semana 2.
+
+## Contratos de mensaje de Semana 2
+
+Los mensajes que cruzan el pipeline orientado a eventos de Semana 2 —el evento de transacción
+(`transaction-event-v1`) y el mensaje de caso marcado (`flagged-case-v1`)— se definen y versionan
+en [`4_Contrato_Evento_Transaccion.md`](4_Contrato_Evento_Transaccion.md). El evento reutiliza
+`transactionId`, `accountId` y `occurredAt` de este contrato base y **no** agrega score ni
+decisión.

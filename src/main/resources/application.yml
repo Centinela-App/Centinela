@@ -2,9 +2,24 @@ spring:
   application:
     name: centinela
 
-# Configuracion base. Los valores por ambiente (staging/production) y los nombres
-# de contenedores/colas se inyectan como app settings del App Service (ISS-004),
-# nunca como secretos versionados.
+  # FEAT-S2-001: Configuracion de PostgreSQL para gestion de casos.
+  # La conexion NO usa password; usa Managed Identity via env vars inyectadas.
+  datasource:
+    url: ${CENTINELA_POSTGRES_JDBC_URL:jdbc:postgresql://localhost:5432/centinela}
+    username: ${CENTINELA_POSTGRES_USER:}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
 
 management:
   endpoints:
@@ -34,9 +49,14 @@ centinela:
       auto-start: ${CENTINELA_QUEUE_AUTO_START:true}
   security:
     entra:
-      # Issuer, audience y JWK set URI de la app registration en Entra ID.
-      # Ninguno de estos valores es secreto; se inyectan como app settings
-      # del App Service (ISS-004), nunca versionados con valores reales.
       issuer-uri: ${CENTINELA_ENTRA_ISSUER_URI}
       audience: ${CENTINELA_ENTRA_AUDIENCE}
       jwk-set-uri: ${CENTINELA_ENTRA_JWK_SET_URI}
+  cosmos:
+    connection-string: ${CENTINELA_COSMOS_CONNECTION_STRING:}
+  messaging:
+    eventgrid:
+      topic-endpoint: ${CENTINELA_EVENTGRID_TOPIC_ENDPOINT:}
+  ratelimit:
+    capacity: ${CENTINELA_RATELIMIT_CAPACITY:120}
+    refill-period-ms: ${CENTINELA_RATELIMIT_REFILL_MS:60000}
