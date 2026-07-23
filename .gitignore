@@ -6,6 +6,9 @@
 *.pem
 *.key
 *secret*
+# Excepcion: el auditor de secretos (ISS-S2-003) lleva "secret" en el nombre pero
+# NO contiene secretos; es un script de prueba versionado.
+!scripts/tests/audit-git-secrets.sh
 
 # === Build / Maven ===
 target/

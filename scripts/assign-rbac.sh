@@ -38,6 +38,7 @@ source "$SCRIPT_DIR/lib/parameters.sh"
 
 readonly SLOT_NAME="staging"
 readonly BLOB_DATA_ROLE="Storage Blob Data Contributor"   # datos, NO administracion
+readonly KV_SECRETS_USER_ROLE="Key Vault Secrets User"    # ISS-S2-003: lectura de secretos
 readonly READER_ROLE="Reader"
 readonly QUEUE_TEST_ROLE="Storage Queue Data Message Processor"  # minimo para roundtrip
 readonly PROD_CONTAINERS=("raw-transactions-production" "verification-documents-production")
@@ -73,6 +74,11 @@ compute_web_app_name() {
   local prefix="$1" sub_id="$2" rg="$3" hash
   hash="$(printf '%s|%s|%s' "$prefix" "$sub_id" "$rg" | sha1sum | cut -c1-6)"
   printf '%s-app-%s' "$prefix" "$hash"
+}
+compute_keyvault_name() {
+  local prefix="$1" sub_id="$2" rg="$3" hash
+  hash="$(printf '%s|%s|%s' "$prefix" "$sub_id" "$rg" | sha1sum | cut -c1-6)"
+  printf '%s-kv-%s' "$prefix" "$hash"
 }
 
 # --- Guard de minimo privilegio ------------------------------------------------
@@ -162,6 +168,19 @@ main() {
     assign_role_scope "$staging_pid" "ServicePrincipal" "$BLOB_DATA_ROLE" "$scope"
   done
   log_info "La aplicacion NO recibe ningun rol de Queue (por diseño de Semana 1)."
+
+  # 1.5) ISS-S2-003: 'Key Vault Secrets User' a la MI de prod y staging, SI el vault
+  #      ya existe. Idempotente y no bloqueante (Semana 1 no tiene vault).
+  local kv_name kv_id
+  kv_name="$(compute_keyvault_name "$NAME_PREFIX" "$SUBSCRIPTION_ID" "$RESOURCE_GROUP")"
+  kv_id="$(az keyvault show --name "$kv_name" --resource-group "$RESOURCE_GROUP" --query id -o tsv 2>/dev/null || true)"
+  if [ -n "$kv_id" ]; then
+    log_info "Key Vault '$kv_name' presente: asignando '$KV_SECRETS_USER_ROLE' a prod y staging..."
+    assign_role_scope "$prod_pid"    "ServicePrincipal" "$KV_SECRETS_USER_ROLE" "$kv_id"
+    assign_role_scope "$staging_pid" "ServicePrincipal" "$KV_SECRETS_USER_ROLE" "$kv_id"
+  else
+    log_info "Sin Key Vault todavia (ISS-S2-003 aun no ejecutada): se omite el rol de secretos."
+  fi
 
   # 2) Analista / Auditor demo -> Reader en el RG (solo si se proporcionan).
   if [ -n "$ANALYST_PRINCIPAL" ]; then

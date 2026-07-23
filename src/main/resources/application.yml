@@ -32,3 +32,10 @@ centinela:
       issuer-uri: ${CENTINELA_ENTRA_ISSUER_URI}
       audience: ${CENTINELA_ENTRA_AUDIENCE}
       jwk-set-uri: ${CENTINELA_ENTRA_JWK_SET_URI}
+  # ISS-S2-003 — El unico secreto real de Semana 2 (connection string de Cosmos for
+  # MongoDB) vive en Key Vault y se inyecta como app setting por referencia
+  # @Microsoft.KeyVault(...) resuelta por Managed Identity: aqui SOLO hay una
+  # referencia al env var, nunca el valor. Default vacio para no acoplar el arranque
+  # (su consumidor real es la Function de scoring, ISS-S2-007).
+  cosmos:
+    connection-string: ${CENTINELA_COSMOS_CONNECTION_STRING:}
