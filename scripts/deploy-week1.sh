@@ -58,6 +58,14 @@ main() {
   fi
 
   log_info "Creando/asegurando Resource Group '$RESOURCE_GROUP'..."
+  local rg_exists; rg_exists="$(az group show --name "$RESOURCE_GROUP" --query "name" -o tsv 2>/dev/null || true)"
+  if [ -n "$rg_exists" ]; then
+    local existing_location; existing_location="$(az group show --name "$RESOURCE_GROUP" --query "location" -o tsv)"
+    if [ "$existing_location" != "$LOCATION" ]; then
+      log_warn "Resource Group ya existe en '$existing_location', pero LOCATION es '$LOCATION'. Usando '$existing_location'."
+      LOCATION="$existing_location"
+    fi
+  fi
   with_retry 3 az group create --name "$RESOURCE_GROUP" --location "$LOCATION" \
     --tags project=centinela week=1 team=celula-centinela --output none
 
