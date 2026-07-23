@@ -39,3 +39,15 @@ centinela:
   # (su consumidor real es la Function de scoring, ISS-S2-007).
   cosmos:
     connection-string: ${CENTINELA_COSMOS_CONNECTION_STRING:}
+  # ISS-S2-006 — Endpoint del Event Grid Topic donde la API publica
+  # transaction-event-v1 tras persistir. No es secreto (la autenticacion es por
+  # Managed Identity); se inyecta como app setting del App Service, nunca versionado.
+  messaging:
+    eventgrid:
+      topic-endpoint: ${CENTINELA_EVENTGRID_TOPIC_ENDPOINT:}
+  # ISS-S2-006 — Limitacion de tasa por origen (token bucket en la app). Ajustable
+  # sin recompilar via app settings: 'capacity' tokens que se rellenan por completo
+  # cada 'refill-period-ms' milisegundos. Al agotarse, la API responde 429.
+  ratelimit:
+    capacity: ${CENTINELA_RATELIMIT_CAPACITY:120}
+    refill-period-ms: ${CENTINELA_RATELIMIT_REFILL_MS:60000}

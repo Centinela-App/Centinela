@@ -75,6 +75,14 @@
             <artifactId>azure-storage-queue</artifactId>
         </dependency>
 
+        <!-- Publicacion del evento de transaccion en Event Grid (ISS-S2-006).
+             Version gestionada por azure-sdk-bom; autenticacion por Managed
+             Identity via DefaultAzureCredential (sin claves versionadas). -->
+        <dependency>
+            <groupId>com.azure</groupId>
+            <artifactId>azure-messaging-eventgrid</artifactId>
+        </dependency>
+
         <!-- Pruebas. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
