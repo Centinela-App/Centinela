@@ -1,73 +1,52 @@
 package com.centinela.casemanagement.infrastructure.persistence;
 
-import com.centinela.casemanagement.application.port.out.CaseAuditPort;
 import com.centinela.casemanagement.application.port.out.CaseRepositoryPort;
 import com.centinela.casemanagement.domain.model.CaseAuditEntry;
-import com.centinela.casemanagement.domain.model.FraudCase;
+import com.centinela.casemanagement.domain.model.Case_;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.Optional;
 
 /**
- * Adaptador de infraestructura: Implementación de puertos JPA.
- * Arquitectura hexagonal - Adapter de persistencia.
- * Historia: HU-S2-001
+ * Implementación del puerto de salida CaseRepositoryPort usando JPA.
+ *
+ * <p>Persiste casos y entradas de auditoría de forma atómica en la misma
+ * transacción de base de datos.
  */
 @Component
-public class JpaCaseRepositoryAdapter {
+public class JpaCaseRepositoryAdapter implements CaseRepositoryPort {
 
-    private final CaseRepositoryPort caseRepository;
-    private final CaseAuditPort caseAudit;
+    @PersistenceContext
+    private EntityManager entityManager;
 
-    public JpaCaseRepositoryAdapter(CaseRepositoryPort caseRepository, CaseAuditPort caseAudit) {
-        this.caseRepository = caseRepository;
-        this.caseAudit = caseAudit;
+    @Override
+    public Optional<Case_> findByTransactionId(String transactionId) {
+        // Busca en la tabla fraud_cases por transactionId
+        try {
+            var query = entityManager.createQuery(
+                    "SELECT c FROM FraudCaseEntity c WHERE c.transactionId = :transactionId",
+                    FraudCaseEntity.class);
+            query.setParameter("transactionId", transactionId);
+            var entity = query.getSingleResult();
+            return Optional.of(entity.toDomain());
+        } catch (jakarta.persistence.NoResultException e) {
+            return Optional.empty();
+        }
     }
 
-    // === CaseRepositoryPort ===
-
-    public FraudCase save(FraudCase fraudCase) {
-        return caseRepository.save(fraudCase);
-    }
-
-    public Optional<FraudCase> findById(Long id) {
-        return caseRepository.findById(id);
-    }
-
-    public Optional<FraudCase> findByTransactionId(String transactionId) {
-        return caseRepository.findByTransactionId(transactionId);
-    }
-
-    public boolean existsByTransactionId(String transactionId) {
-        return caseRepository.existsByTransactionId(transactionId);
-    }
-
-    public List<FraudCase> findAll() {
-        return caseRepository.findAll();
-    }
-
+    @Override
     @Transactional
-    public void delete(FraudCase fraudCase) {
-        caseRepository.delete(fraudCase);
-    }
+    public void saveCaseWithAudit(Case_ case_, CaseAuditEntry auditEntry) {
+        // Persistir el caso y la auditoría en la misma transacción
+        entityManager.persist(auditEntry);
+        entityManager.flush();
 
-    // === CaseAuditPort ===
-
-    /**
-     * Registra una entrada de auditoría.
-     * Este método solo realiza INSERT; la BD rechaza UPDATE/DELETE.
-     */
-    public CaseAuditEntry logAudit(CaseAuditEntry entry) {
-        return caseAudit.save(entry);
-    }
-
-    public List<CaseAuditEntry> findAuditByCaseId(Long caseId) {
-        return caseAudit.findByCaseIdOrderByChangedAtAsc(caseId);
-    }
-
-    public long countAuditEntries(Long caseId) {
-        return caseAudit.countByCaseId(caseId);
+        // Crear entidad de caso desde el record Case_
+        FraudCaseEntity caseEntity = FraudCaseEntity.fromDomain(case_);
+        entityManager.persist(caseEntity);
+        entityManager.flush();
     }
 }

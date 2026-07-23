@@ -1,74 +1,123 @@
 package com.centinela.casemanagement.domain.model;
 
-import jakarta.persistence.*;
-import java.time.Instant;
-import java.util.Objects;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.Table;
 
 /**
- * Entidad de dominio: Entrada de auditoría (append-only).
- * Historia: HU-S2-001 · Criterio: Auditoría inmutable
+ * Entrada de auditoría para un caso.
+ *
+ * <p>Registra todas las acciones realizadas sobre un caso para trazabilidad.
  */
 @Entity
-@Table(name = "case_audit")
+@Table(name = "case_audit_entries", indexes = {
+        @Index(name = "idx_audit_case_id", columnList = "caseId"),
+        @Index(name = "idx_audit_transaction_id", columnList = "transactionId")
+})
 public class CaseAuditEntry {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "case_id", nullable = false)
-    private Long caseId;
+    private String entryId;
+    private String caseId;
+    private String transactionId;
 
-    @Column(name = "field_name", nullable = false, length = 64)
-    private String fieldName;
+    @Enumerated(EnumType.STRING)
+    private AuditAction action;
 
-    @Column(name = "old_value", columnDefinition = "TEXT")
-    private String oldValue;
+    private String performedBy;
+    private String details;
 
-    @Column(name = "new_value", columnDefinition = "TEXT")
-    private String newValue;
-
-    @Column(name = "changed_by", nullable = false)
-    private String changedBy;
-
-    @Column(name = "changed_at", nullable = false, updatable = false)
-    private Instant changedAt;
-
-    @Column(name = "change_type", nullable = false, length = 32)
-    private String changeType;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "case_id", insertable = false, updatable = false)
-    private FraudCase fraudCase;
-
-    protected CaseAuditEntry() {
-        // JPA
+    public CaseAuditEntry() {
     }
 
-    public CaseAuditEntry(Long caseId, String fieldName, String oldValue,
-                          String newValue, String changedBy, String changeType) {
-        this.caseId = Objects.requireNonNull(caseId);
-        this.fieldName = Objects.requireNonNull(fieldName);
-        this.oldValue = oldValue;
-        this.newValue = newValue;
-        this.changedBy = Objects.requireNonNull(changedBy);
-        this.changeType = Objects.requireNonNull(changeType);
-        this.changedAt = Instant.now();
+    public CaseAuditEntry(String entryId, String caseId, String transactionId,
+                          AuditAction action, String performedBy, String details) {
+        this.entryId = entryId;
+        this.caseId = caseId;
+        this.transactionId = transactionId;
+        this.action = action;
+        this.performedBy = performedBy;
+        this.details = details;
     }
 
-    @PrePersist
-    protected void onCreate() {
-        if (changedAt == null) changedAt = Instant.now();
+    public Long getId() {
+        return id;
     }
 
-    // Getters (sin setters para mantener inmutabilidad)
-    public Long getId() { return id; }
-    public Long getCaseId() { return caseId; }
-    public String getFieldName() { return fieldName; }
-    public String getOldValue() { return oldValue; }
-    public String getNewValue() { return newValue; }
-    public String getChangedBy() { return changedBy; }
-    public Instant getChangedAt() { return changedAt; }
-    public String getChangeType() { return changeType; }
-    public FraudCase getFraudCase() { return fraudCase; }
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getEntryId() {
+        return entryId;
+    }
+
+    public void setEntryId(String entryId) {
+        this.entryId = entryId;
+    }
+
+    public String getCaseId() {
+        return caseId;
+    }
+
+    public void setCaseId(String caseId) {
+        this.caseId = caseId;
+    }
+
+    public String getTransactionId() {
+        return transactionId;
+    }
+
+    public void setTransactionId(String transactionId) {
+        this.transactionId = transactionId;
+    }
+
+    public AuditAction getAction() {
+        return action;
+    }
+
+    public void setAction(AuditAction action) {
+        this.action = action;
+    }
+
+    public String getPerformedBy() {
+        return performedBy;
+    }
+
+    public void setPerformedBy(String performedBy) {
+        this.performedBy = performedBy;
+    }
+
+    public String getDetails() {
+        return details;
+    }
+
+    public void setDetails(String details) {
+        this.details = details;
+    }
+
+    /**
+     * Acciones auditables en un caso.
+     */
+    public enum AuditAction {
+        /** Caso abierto/recibido desde la cola. */
+        OPENED,
+
+        /** Caso asignado a un analista. */
+        ASSIGNED,
+
+        /** Estado del caso actualizado. */
+        STATUS_CHANGED,
+
+        /** Resolución aplicada al caso. */
+        RESOLVED
+    }
 }

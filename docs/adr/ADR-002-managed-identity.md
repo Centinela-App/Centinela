@@ -1,5 +1,7 @@
 # ADR-002: Managed Identity
 
+> **Fuente canónica:** este es el ADR resumido de Semana 1. El registro de decisiones detallado y vivo (ADR-001…006, con contexto, alternativas y consecuencias) es [`docs/2_Arquitectura/2_ADR_Decisiones_Arquitectura.md`](../2_Arquitectura/2_ADR_Decisiones_Arquitectura.md). Ante cualquier discrepancia, ese documento prevalece.
+
 ## Contexto
 
 Evitar almacenar credenciales (connection strings, SAS tokens, API keys) en código o configuración. Requerimiento de seguridad RNF-S1-002.
