@@ -3,6 +3,7 @@ package com.centinela.transactioningestion.application.service;
 import com.centinela.transactioningestion.application.command.IngestTransactionCommand;
 import com.centinela.transactioningestion.application.exception.StorageUnavailableException;
 import com.centinela.transactioningestion.application.port.out.RawTransactionStoragePort;
+import com.centinela.transactioningestion.application.port.out.TransactionEventPublisherPort;
 import com.centinela.transactioningestion.domain.model.Location;
 import com.centinela.transactioningestion.domain.model.Merchant;
 import com.centinela.transactioningestion.domain.model.Transaction;
@@ -25,6 +26,9 @@ class IngestTransactionServiceTest {
 
     private static final Instant RECEIVED_AT = Instant.parse("2026-07-18T15:30:00Z");
     private static final Clock FIXED_CLOCK = Clock.fixed(RECEIVED_AT, ZoneOffset.UTC);
+    // La publicacion del evento se cubre en IngestPublishesEventTest; aqui basta un no-op.
+    private static final TransactionEventPublisherPort NO_OP_PUBLISHER = (transaction, receivedAt) -> {
+    };
 
     @Test
     void should_ack_only_after_blob_persistence() {
@@ -38,7 +42,7 @@ class IngestTransactionServiceTest {
             stored.set(true);
         };
 
-        IngestTransactionService service = new IngestTransactionService(storagePort, FIXED_CLOCK);
+        IngestTransactionService service = new IngestTransactionService(storagePort, NO_OP_PUBLISHER, FIXED_CLOCK);
         service.ingest(new IngestTransactionCommand(transaction));
 
         assertTrue(stored.get(), "The use case must persist before returning normally");
@@ -51,7 +55,7 @@ class IngestTransactionServiceTest {
         AtomicReference<Transaction> captured = new AtomicReference<>();
         RawTransactionStoragePort storagePort = (storedTransaction, receivedAt) -> captured.set(storedTransaction);
 
-        new IngestTransactionService(storagePort, FIXED_CLOCK)
+        new IngestTransactionService(storagePort, NO_OP_PUBLISHER, FIXED_CLOCK)
                 .ingest(new IngestTransactionCommand(transaction));
 
         assertEquals(new BigDecimal("4.7110"), captured.get().location().latitude());
@@ -67,7 +71,7 @@ class IngestTransactionServiceTest {
             throw expected;
         };
 
-        IngestTransactionService service = new IngestTransactionService(storagePort, FIXED_CLOCK);
+        IngestTransactionService service = new IngestTransactionService(storagePort, NO_OP_PUBLISHER, FIXED_CLOCK);
 
         StorageUnavailableException actual = assertThrows(
                 StorageUnavailableException.class,
