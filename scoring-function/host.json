@@ -17,5 +17,15 @@
       "maxEventsPerBatch": 1
     }
   },
+  "customHandler": {
+    "description": {
+      "defaultExecutablePath": ""
+    }
+  },
+  "scoringSettings": {
+    "scoringThreshold": 50,
+    "riskyMerchants": ["Casino Royal", "BetCrypto", "RiskyStore"],
+    "riskyCategories": ["gambling", "crypto", "pawn_shop"]
+  },
   "functionTimeout": "00:05:00"
 }

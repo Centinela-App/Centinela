@@ -4,8 +4,11 @@ import com.azure.cosmos.CosmosClient;
 import com.azure.cosmos.CosmosClientBuilder;
 import com.azure.cosmos.CosmosContainer;
 import com.azure.identity.DefaultAzureCredentialBuilder;
+import com.centinela.scoring.application.config.ScoringThresholdProvider;
 import com.centinela.scoring.application.port.out.TransactionHistoryPort;
+import com.centinela.scoring.application.service.ScoreTransactionService;
 import com.centinela.scoring.domain.model.HistoricalTransaction;
+import com.centinela.scoring.domain.model.Score;
 import com.centinela.scoring.domain.model.TransactionEvent;
 import com.centinela.scoring.infrastructure.cosmos.CosmosTransactionHistoryAdapter;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -19,18 +22,14 @@ import java.util.List;
 import java.util.logging.Level;
 
 /**
- * ISS-S2-007: se activa por Event Grid ({@code transaction-event-v1}) y
- * SOLO recupera el historial de la cuenta desde una unica particion de
- * Cosmos, registrando la evidencia de RU. Aun sin reglas de deteccion
- * (ISS-S2-008) ni persistencia/publicacion (ISS-S2-009): eso llega en las
- * siguientes issues, que reemplazaran esta clase.
- *
- * <p>Fuera de alcance (y por tanto ausente de este archivo): reglas de
- * umbral, invocacion sincrona desde la API.
+ * Azure Function que se activa por Event Grid ({@code transaction-event-v1}),
+ * recupera el historial de la cuenta desde Cosmos DB y ejecuta el scoring
+ * con las 4 reglas puras de dominio (ISS-S2-008).
  */
 public final class ScoreTransactionFunction {
 
     private static volatile TransactionHistoryPort historyPort;
+    private static volatile ScoreTransactionService scoreService;
     private static final Object INIT_LOCK = new Object();
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
@@ -53,16 +52,36 @@ public final class ScoreTransactionFunction {
             List<HistoricalTransaction> history = historyPort()
                     .recentHistory(transaction.accountId(), transaction.occurredAt());
 
-            // Evidencia pedida por TEST-S2-009: confirma la activacion y el tamano
-            // del historial recuperado. El RU/consumo de la consulta ya queda
-            // registrado dentro de CosmosTransactionHistoryAdapter.
             context.getLogger().info(
                     "history retrieved accountId=" + transaction.accountId()
                             + " historySize=" + history.size());
+
+            Score score = scoreService().executeScoring(transaction, history);
+
+            context.getLogger().info(
+                    "scoring completed accountId=" + transaction.accountId()
+                            + " totalScore=" + score.totalScore()
+                            + " triggeredRules=" + score.triggeredRules().size());
+
         } catch (Exception exception) {
             context.getLogger().log(Level.SEVERE, "Failed to process transaction-event-v1", exception);
             throw new RuntimeException("Failed to process transaction-event-v1", exception);
         }
+    }
+
+    private static ScoreTransactionService scoreService() {
+        ScoreTransactionService current = scoreService;
+        if (current == null) {
+            synchronized (INIT_LOCK) {
+                current = scoreService;
+                if (current == null) {
+                    ScoringThresholdProvider provider = new ScoringThresholdProvider();
+                    current = new ScoreTransactionService(provider);
+                    scoreService = current;
+                }
+            }
+        }
+        return current;
     }
 
     private static TransactionHistoryPort historyPort() {
