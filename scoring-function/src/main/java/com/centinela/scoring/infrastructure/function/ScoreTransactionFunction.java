@@ -1,224 +1,128 @@
 package com.centinela.scoring.infrastructure.function;
 
+import com.azure.cosmos.CosmosClient;
+import com.azure.cosmos.CosmosClientBuilder;
+import com.azure.cosmos.CosmosContainer;
+import com.azure.identity.DefaultAzureCredentialBuilder;
+import com.centinela.scoring.application.port.out.TransactionHistoryPort;
+import com.centinela.scoring.domain.model.HistoricalTransaction;
+import com.centinela.scoring.domain.model.TransactionEvent;
+import com.centinela.scoring.infrastructure.cosmos.CosmosTransactionHistoryAdapter;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.microsoft.azure.functions.*;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.microsoft.azure.functions.ExecutionContext;
+import com.microsoft.azure.functions.annotation.EventGridTrigger;
 import com.microsoft.azure.functions.annotation.FunctionName;
-import com.microsoft.azure.functions.annotation.EventHubTrigger;
 
-import com.centinela.scoring.application.service.ScoreTransactionService;
-import com.centinela.scoring.domain.model.Score;
-import com.centinela.scoring.infrastructure.config.ScoringConfiguration;
-
-import java.util.Map;
+import java.util.List;
 import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
- * Azure Function que procesa eventos de transaccion para scoring.
+ * ISS-S2-007: se activa por Event Grid ({@code transaction-event-v1}) y
+ * SOLO recupera el historial de la cuenta desde una unica particion de
+ * Cosmos, registrando la evidencia de RU. Aun sin reglas de deteccion
+ * (ISS-S2-008) ni persistencia/publicacion (ISS-S2-009): eso llega en las
+ * siguientes issues, que reemplazaran esta clase.
  *
- * <p>Trigger: Azure Event Hub (topic: transaction-event-v1)
- *
- * <p>Flujo:
- * 1. Recibir evento de transaccion
- * 2. Extraer transactionId y accountId
- * 3. Ejecutar scoring (calcular, persistir, publicar caso si aplica)
- * 4. Registrar resultado
+ * <p>Fuera de alcance (y por tanto ausente de este archivo): reglas de
+ * umbral, invocacion sincrona desde la API.
  */
 public final class ScoreTransactionFunction {
 
-    private static final String FUNCTION_NAME = "ScoreTransactionFunction";
+    private static volatile TransactionHistoryPort historyPort;
+    private static final Object INIT_LOCK = new Object();
 
-    private final ScoreTransactionServiceWrapper serviceWrapper;
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
-    public ScoreTransactionFunction() {
-        this.serviceWrapper = new ScoreTransactionServiceWrapper();
-    }
-
-    /**
-     * Punto de entrada triggered por Event Hub.
-     *
-     * @param message el mensaje de transaccion
-     * @param context contexto de la function
-     * @return resultado de la ejecucion
-     */
-    @FunctionName(FUNCTION_NAME)
-    public HttpResponseMessage run(
-            @EventHubTrigger(
-                    name = "transactionMessage",
-                    eventHubName = "",
-                    connection = "EVENT_HUB_CONNECTION_STRING"
-            ) String message,
-            final ExecutionContext context) {
-
-        Logger logger = context.getLogger();
-        
+    @FunctionName("ScoreTransaction")
+    public void run(
+            @EventGridTrigger(name = "event") String eventPayload,
+            ExecutionContext context) {
         try {
-            logger.log(Level.INFO, FUNCTION_NAME + ": Processing transaction message");
-            context.getLogger().log(Level.INFO, "Event payload: " + message);
+            com.fasterxml.jackson.databind.JsonNode rootNode = OBJECT_MAPPER.readTree(eventPayload);
+            com.fasterxml.jackson.databind.JsonNode dataNode = rootNode.has("data") ? rootNode.get("data") : rootNode;
+            TransactionEvent transaction = OBJECT_MAPPER.treeToValue(dataNode, TransactionEvent.class);
 
-            // Parsear evento
-            TransactionEvent transactionEvent = parseEvent(message, logger);
+            context.getLogger().info(
+                    "transaction-event-v1 received, accountId=" + transaction.accountId()
+                            + " transactionId=" + transaction.transactionId());
 
-            // Ejecutar scoring
-            Score score = serviceWrapper.executeScoring(
-                    transactionEvent.transactionId(),
-                    transactionEvent.accountId(),
-                    logger
-            );
+            List<HistoricalTransaction> history = historyPort()
+                    .recentHistory(transaction.accountId(), transaction.occurredAt());
 
-            logger.log(Level.INFO, String.format(
-                    "%s: Scored transaction %s with total score %d",
-                    FUNCTION_NAME,
-                    score.transactionId(),
-                    score.totalScore()
-            ));
-
-            // Loguear si se publico caso
-            if (score.totalScore() >= ScoringConfiguration.createScoringThreshold()) {
-                logger.log(Level.INFO, String.format(
-                        "%s: Flagged case published for transaction %s (score %d >= threshold %d)",
-                        FUNCTION_NAME,
-                        score.transactionId(),
-                        score.totalScore(),
-                        ScoringConfiguration.createScoringThreshold()
-                ));
-            }
-
-            return new HttpResponseMessageStub(
-                    new SimpleHttpStatusType(200, "OK"),
-                    "{\"status\":\"success\",\"transactionId\":\"" + score.transactionId() + "\",\"score\":" + score.totalScore() + "}"
-            );
-
-        } catch (Exception e) {
-            logger.log(Level.SEVERE, FUNCTION_NAME + ": Error processing transaction event: " + e.getMessage(), e);
-            return new HttpResponseMessageStub(
-                    new SimpleHttpStatusType(500, "Internal Server Error"),
-                    "{\"error\":\"Error processing transaction: " + e.getMessage() + "\"}"
-            );
+            // Evidencia pedida por TEST-S2-009: confirma la activacion y el tamano
+            // del historial recuperado. El RU/consumo de la consulta ya queda
+            // registrado dentro de CosmosTransactionHistoryAdapter.
+            context.getLogger().info(
+                    "history retrieved accountId=" + transaction.accountId()
+                            + " historySize=" + history.size());
+        } catch (Exception exception) {
+            context.getLogger().log(Level.SEVERE, "Failed to process transaction-event-v1", exception);
+            throw new RuntimeException("Failed to process transaction-event-v1", exception);
         }
     }
 
-    private TransactionEvent parseEvent(String message, Logger logger) throws Exception {
-        ObjectMapper mapper = ScoringConfiguration.createObjectMapper();
-        @SuppressWarnings("unchecked")
-        Map<String, Object> eventData = mapper.readValue(message, Map.class);
-
-        String transactionId = (String) eventData.get("transactionId");
-        String accountId = (String) eventData.get("accountId");
-
-        if (transactionId == null || transactionId.isBlank()) {
-            throw new IllegalArgumentException("transactionId is required in event");
-        }
-        if (accountId == null || accountId.isBlank()) {
-            throw new IllegalArgumentException("accountId is required in event");
-        }
-
-        return new TransactionEvent(transactionId, accountId);
-    }
-
-    /**
-     * Representacion del evento de transaccion.
-     */
-    private record TransactionEvent(String transactionId, String accountId) {}
-
-    /**
-     * Implementacion simple de HttpStatusType.
-     */
-    private static class SimpleHttpStatusType implements HttpStatusType {
-        private final int statusCode;
-        private final String reason;
-
-        SimpleHttpStatusType(int statusCode, String reason) {
-            this.statusCode = statusCode;
-            this.reason = reason;
-        }
-
-        public int value() {
-            return statusCode;
-        }
-
-        public String getReasonPhrase() {
-            return reason;
-        }
-
-        public String reasonPhrase() {
-            return reason;
-        }
-    }
-
-    /**
-     * Stub simple de HttpResponseMessage para evitar problemas de compatibilidad.
-     */
-    private static class HttpResponseMessageStub implements HttpResponseMessage {
-        private final HttpStatusType status;
-        private final String body;
-
-        HttpResponseMessageStub(HttpStatusType status, String body) {
-            this.status = status;
-            this.body = body;
-        }
-
-        @Override
-        public HttpStatusType getStatus() {
-            return status;
-        }
-
-        @Override
-        public String getBody() {
-            return body;
-        }
-
-        @Override
-        public String getHeader(String name) {
-            if ("Content-Type".equals(name)) {
-                return "application/json";
-            }
-            return null;
-        }
-    }
-
-    /**
-     * Wrapper para inicializar el servicio de scoring lazily.
-     */
-    private static class ScoreTransactionServiceWrapper {
-        private volatile ScoreTransactionService service;
-        private volatile ObjectMapper objectMapper;
-        
-        ScoreTransactionServiceWrapper() {
-            // Inicializacion lazy para evitar problemas con Azure Functions
-        }
-        
-        private ScoreTransactionService getService() {
-            if (service == null) {
-                synchronized (this) {
-                    if (service == null) {
-                        objectMapper = ScoringConfiguration.createObjectMapper();
-                        
-                        var cosmosClient = ScoringConfiguration.createCosmosClient();
-                        var cosmosContainer = ScoringConfiguration.createCosmosContainer(cosmosClient);
-                        var queueClient = ScoringConfiguration.createFlaggedCasesQueueClient();
-                        
-                        var persistencePort = ScoringConfiguration.createScorePersistencePort(cosmosContainer, objectMapper);
-                        var publisherPort = ScoringConfiguration.createFlaggedCasePublisherPort(queueClient, objectMapper);
-                        
-                        service = ScoringConfiguration.createScoreTransactionService(
-                                objectMapper,
-                                persistencePort,
-                                publisherPort
-                        );
-                    }
+    private static TransactionHistoryPort historyPort() {
+        TransactionHistoryPort current = historyPort;
+        if (current == null) {
+            synchronized (INIT_LOCK) {
+                current = historyPort;
+                if (current == null) {
+                    current = buildHistoryPort();
+                    historyPort = current;
                 }
             }
-            return service;
         }
-        
-        Score executeScoring(String transactionId, String accountId, Logger logger) {
-            try {
-                return getService().executeScoring(transactionId, accountId);
-            } catch (Exception e) {
-                logger.log(Level.SEVERE, "Error in scoring: " + e.getMessage(), e);
-                throw new RuntimeException("Scoring failed", e);
+        return current;
+    }
+
+    private static TransactionHistoryPort buildHistoryPort() {
+        CosmosClient cosmosClient;
+        String keyVaultUri = System.getenv("KEY_VAULT_URI");
+        if (keyVaultUri != null && !keyVaultUri.isBlank()) {
+            com.centinela.scoring.infrastructure.config.KeyVaultConnectionStrings keyVault =
+                    new com.centinela.scoring.infrastructure.config.KeyVaultConnectionStrings();
+            String connString = keyVault.cosmosConnectionString();
+            CosmosClientBuilder builder = new CosmosClientBuilder();
+            String endpoint = null;
+            String key = null;
+            for (String part : connString.split(";")) {
+                if (part.startsWith("AccountEndpoint=")) {
+                    endpoint = part.substring("AccountEndpoint=".length());
+                } else if (part.startsWith("AccountKey=")) {
+                    key = part.substring("AccountKey=".length());
+                }
             }
+            if (endpoint != null) {
+                builder.endpoint(endpoint);
+            }
+            if (key != null && !key.isBlank()) {
+                builder.key(key);
+            } else {
+                builder.credential(new DefaultAzureCredentialBuilder().build());
+            }
+            cosmosClient = builder.buildClient();
+        } else {
+            String endpoint = requiredEnv("COSMOS_ENDPOINT");
+            cosmosClient = new CosmosClientBuilder()
+                    .endpoint(endpoint)
+                    .credential(new DefaultAzureCredentialBuilder().build())
+                    .buildClient();
         }
+        CosmosContainer container = cosmosClient
+                .getDatabase(requiredEnv("COSMOS_DATABASE"))
+                .getContainer(requiredEnv("COSMOS_TRANSACTIONS_CONTAINER"));
+        return new CosmosTransactionHistoryAdapter(container);
+    }
+
+    private static String requiredEnv(String name) {
+        String value = System.getenv(name);
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException("Missing required App Setting: " + name);
+        }
+        return value;
     }
 }

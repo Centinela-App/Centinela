@@ -1,29 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Proyecto independiente para Azure Functions - Semana 2 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.centinela</groupId>
     <artifactId>scoring-function</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
-
     <name>scoring-function</name>
-    <description>Azure Function para scoring de transacciones - Semana 2</description>
+    <description>Motor de scoring serverless (Semana 2) - Azure Functions Java, disparado por Event Grid.</description>
 
     <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <java.version>21</java.version>
-        <azure-sdk-bom.version>1.2.31</azure-sdk-bom.version>
-        <azure-functions-java-library.version>3.1.0</azure-functions-java-library.version>
-        <jackson.version>2.18.3</jackson.version>
-        <junit.version>5.11.4</junit.version>
-        <mockito.version>5.15.2</mockito.version>
-        <assertj.version>3.26.3</assertj.version>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <azure.functions.java.library.version>3.1.0</azure.functions.java.library.version>
+        <azure.functions.maven.plugin.version>1.36.0</azure.functions.maven.plugin.version>
+        <azure-sdk-bom.version>1.2.31</azure-sdk-bom.version>
+        <jackson.version>2.18.2</jackson.version>
+        <junit.version>5.11.4</junit.version>
+        <mockito.version>5.14.2</mockito.version>
+
+        <!-- Usados por azure-functions-maven-plugin al empaquetar/desplegar. -->
+        <functionAppName>centinela-scoring-function</functionAppName>
+        <functionAppRegion>eastus2</functionAppRegion>
+        <functionResourceGroup>centinela-rg</functionResourceGroup>
+        <stagingDirectory>${project.build.directory}/azure-functions/${functionAppName}</stagingDirectory>
     </properties>
 
     <dependencyManagement>
@@ -35,53 +39,54 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            <dependency>
-                <groupId>com.fasterxml.jackson</groupId>
-                <artifactId>jackson-bom</artifactId>
-                <version>${jackson.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
         </dependencies>
     </dependencyManagement>
 
     <dependencies>
-        <!-- Azure Functions -->
+        <!-- Contrato de Azure Functions Java (triggers, ExecutionContext). -->
         <dependency>
             <groupId>com.microsoft.azure.functions</groupId>
             <artifactId>azure-functions-java-library</artifactId>
-            <version>${azure-functions-java-library.version}</version>
+            <version>${azure.functions.java.library.version}</version>
         </dependency>
 
-        <!-- Azure Cosmos for MongoDB -->
+        <!-- Lectura/escritura en Cosmos por clave de particion (accountId). -->
         <dependency>
             <groupId>com.azure</groupId>
             <artifactId>azure-cosmos</artifactId>
         </dependency>
 
-        <!-- Azure Storage Queue -->
+        <!-- Cola de casos marcados (flagged-case-v1). -->
         <dependency>
             <groupId>com.azure</groupId>
             <artifactId>azure-storage-queue</artifactId>
         </dependency>
 
-        <!-- Azure Identity para Managed Identity -->
+        <!-- Managed Identity para Cosmos/Storage/Key Vault. -->
         <dependency>
             <groupId>com.azure</groupId>
             <artifactId>azure-identity</artifactId>
         </dependency>
 
-        <!-- JSON processing -->
+        <!-- Cadena de conexion de Cosmos/Queue leida de Key Vault. -->
+        <dependency>
+            <groupId>com.azure</groupId>
+            <artifactId>azure-security-keyvault-secrets</artifactId>
+        </dependency>
+
+        <!-- Serializacion del evento transaction-event-v1 y de los mensajes de cola. -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.datatype</groupId>
             <artifactId>jackson-datatype-jsr310</artifactId>
+            <version>${jackson.version}</version>
         </dependency>
 
-        <!-- Pruebas -->
+        <!-- Pruebas. -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -100,55 +105,89 @@
             <version>${mockito.version}</version>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>org.assertj</groupId>
-            <artifactId>assertj-core</artifactId>
-            <version>${assertj.version}</version>
-            <scope>test</scope>
-        </dependency>
     </dependencies>
 
     <build>
+        <finalName>${project.artifactId}-${project.version}</finalName>
         <plugins>
-            <plugin>
-                <groupId>com.microsoft.azure</groupId>
-                <artifactId>azure-functions-maven-plugin</artifactId>
-                <version>1.36.0</version>
-                <configuration>
-                    <resourceGroup>${RESOURCE_GROUP:-centinela-rg}</resourceGroup>
-                    <appName>${FUNCTION_APP_NAME:-centinela-scoring}</appName>
-                    <appSettings>
-                        <property>
-                            <name>FUNCTIONS_WORKER_RUNTIME</name>
-                            <value>java</value>
-                        </property>
-                    </appSettings>
-                </configuration>
-            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.13.0</version>
                 <configuration>
-                    <source>21</source>
-                    <target>21</target>
+                    <release>${java.version}</release>
                 </configuration>
             </plugin>
+
+            <!-- Empaqueta y despliega la Function (usado por scripts/deploy-scoring-function.sh). -->
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.3.1</version>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-failsafe-plugin</artifactId>
-                <version>3.3.1</version>
+                <groupId>com.microsoft.azure</groupId>
+                <artifactId>azure-functions-maven-plugin</artifactId>
+                <version>${azure.functions.maven.plugin.version}</version>
+                <configuration>
+                    <appName>${functionAppName}</appName>
+                    <resourceGroup>${functionResourceGroup}</resourceGroup>
+                    <region>${functionAppRegion}</region>
+                    <runtime>
+                        <os>linux</os>
+                        <javaVersion>21</javaVersion>
+                    </runtime>
+                    <appSettings>
+                        <property>
+                            <name>FUNCTIONS_EXTENSION_VERSION</name>
+                            <value>~4</value>
+                        </property>
+                    </appSettings>
+                </configuration>
                 <executions>
                     <execution>
+                        <id>package-functions</id>
                         <goals>
-                            <goal>integration-test</goal>
-                            <goal>verify</goal>
+                            <goal>package</goal>
                         </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Copia el jar y los recursos al directorio de staging del paquete. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-host-json</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${stagingDirectory}</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.basedir}</directory>
+                                    <includes>
+                                        <include>host.json</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>copy-jar</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${stagingDirectory}</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.build.directory}</directory>
+                                    <includes>
+                                        <include>${project.build.finalName}.jar</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>

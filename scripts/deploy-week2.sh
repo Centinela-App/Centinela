@@ -28,6 +28,7 @@ PROVISION_STEPS=(
   "provision-postgres.sh"    # ISS-S2-002  almacen de casos (PostgreSQL privado)
   "provision-keyvault.sh"    # ISS-S2-003  gestor de secretos
   "provision-eventgrid.sh"   # ISS-S2-005  mensajeria (evento + cola de casos)
+  "deploy-scoring-function.sh" # ISS-S2-007  despliegue del modulo scoring-function
 )
 
 main() {

@@ -169,15 +169,22 @@ main() {
   done
   log_info "La aplicacion NO recibe ningun rol de Queue (por diseño de Semana 1)."
 
-  # 1.5) ISS-S2-003: 'Key Vault Secrets User' a la MI de prod y staging, SI el vault
-  #      ya existe. Idempotente y no bloqueante (Semana 1 no tiene vault).
-  local kv_name kv_id
+  # 1.5) ISS-S2-003 / ISS-S2-007: 'Key Vault Secrets User' a la MI de prod, staging y Function App, SI el vault
+  #      ya existe. Idempotente y no bloqueante.
+  local kv_name kv_id fn_app_name fn_pid
   kv_name="$(compute_keyvault_name "$NAME_PREFIX" "$SUBSCRIPTION_ID" "$RESOURCE_GROUP")"
   kv_id="$(az keyvault show --name "$kv_name" --resource-group "$RESOURCE_GROUP" --query id -o tsv 2>/dev/null || true)"
   if [ -n "$kv_id" ]; then
     log_info "Key Vault '$kv_name' presente: asignando '$KV_SECRETS_USER_ROLE' a prod y staging..."
     assign_role_scope "$prod_pid"    "ServicePrincipal" "$KV_SECRETS_USER_ROLE" "$kv_id"
     assign_role_scope "$staging_pid" "ServicePrincipal" "$KV_SECRETS_USER_ROLE" "$kv_id"
+    
+    fn_app_name="${SCORING_FUNCTION_APP_NAME:-${NAME_PREFIX}-scoring-fn}"
+    fn_pid="$(az functionapp identity show --name "$fn_app_name" --resource-group "$RESOURCE_GROUP" --query principalId -o tsv 2>/dev/null || true)"
+    if [ -n "$fn_pid" ]; then
+      log_info "Asignando '$KV_SECRETS_USER_ROLE' a la MI de Function App ($fn_app_name)..."
+      assign_role_scope "$fn_pid" "ServicePrincipal" "$KV_SECRETS_USER_ROLE" "$kv_id"
+    fi
   else
     log_info "Sin Key Vault todavia (ISS-S2-003 aun no ejecutada): se omite el rol de secretos."
   fi
