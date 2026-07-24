@@ -24,9 +24,9 @@
         <mockito.version>5.14.2</mockito.version>
 
         <!-- Usados por azure-functions-maven-plugin al empaquetar/desplegar. -->
-        <functionAppName>centinela-scoring-function</functionAppName>
+        <functionAppName>cent-scoring-fn</functionAppName>
         <functionAppRegion>eastus2</functionAppRegion>
-        <functionResourceGroup>centinela-rg</functionResourceGroup>
+        <functionResourceGroup>rg-centinela-week1</functionResourceGroup>
         <stagingDirectory>${project.build.directory}/azure-functions/${functionAppName}</stagingDirectory>
     </properties>
 
