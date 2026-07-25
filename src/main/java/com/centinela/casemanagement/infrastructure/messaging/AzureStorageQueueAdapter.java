@@ -7,6 +7,7 @@ import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -36,12 +37,15 @@ public class AzureStorageQueueAdapter implements FlaggedCaseQueueListener.QueueR
     /**
      * Constructor que inicializa el cliente de cola con Managed Identity.
      *
+     * @param accountName nombre de la cuenta de Storage
      * @param queueName nombre de la cola (inyectado desde app settings)
      */
+    @Autowired
     public AzureStorageQueueAdapter(
+            @Value("${centinela.storage.blob.account-name}") String accountName,
             @Value("${centinela.queue.flagged-cases.name}") String queueName) {
         this.queueClient = new QueueClientBuilder()
-                .endpoint(buildEndpoint(queueName))
+                .endpoint(buildEndpoint(accountName))
                 .credential(new DefaultAzureCredentialBuilder().build())
                 .queueName(queueName)
                 .buildClient();
@@ -75,29 +79,17 @@ public class AzureStorageQueueAdapter implements FlaggedCaseQueueListener.QueueR
     }
 
     @Override
-    public void deleteMessage(String messageId) {
-        // Para eliminar necesitamos el popReceipt - en esta implementación
-        // almacenamos una referencia al último mensaje recibido
-        // En producción, usar un mapa messageId -> popReceipt
-        log.warn("deleteMessage(messageId) called without popReceipt - not implemented. Use deleteMessage(messageId, popReceipt) instead.");
-    }
-
-    /**
-     * Elimina un mensaje usando su popReceipt.
-     *
-     * @param messageId ID del mensaje
-     * @param popReceipt token de eliminación obtenido al recibir el mensaje
-     */
     public void deleteMessage(String messageId, String popReceipt) {
+        if (popReceipt == null || popReceipt.isBlank()) {
+            throw new IllegalArgumentException("popReceipt is required to delete an Azure Queue message");
+        }
         queueClient.deleteMessage(messageId, popReceipt);
         log.debug("Message {} deleted successfully", messageId);
     }
 
-    private String buildEndpoint(String queueName) {
-        // Endpoint format: https://{account}.queue.core.windows.net/{queue}
-        String accountName = System.getenv("CENTINELA_STORAGE_ACCOUNT");
+    private String buildEndpoint(String accountName) {
         if (accountName == null || accountName.isBlank()) {
-            throw new IllegalStateException("CENTINELA_STORAGE_ACCOUNT environment variable is required");
+            throw new IllegalStateException("centinela.storage.blob.account-name is required");
         }
         return String.format("https://%s.queue.core.windows.net", accountName);
     }

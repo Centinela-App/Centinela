@@ -11,6 +11,10 @@ management:
         include: health
 
 centinela:
+  queue:
+    adapter: disabled
+    consumer:
+      auto-start: false
   storage:
     blob:
       account-name: centinelatest

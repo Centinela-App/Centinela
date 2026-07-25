@@ -2,6 +2,7 @@ package com.centinela.casemanagement.infrastructure.messaging;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -24,6 +25,7 @@ import org.springframework.stereotype.Component;
  * el consumo manualmente o mediante un Function de Azure.
  */
 @Component
+@ConditionalOnProperty(name = "centinela.queue.adapter", havingValue = "azure-storage-queue", matchIfMissing = true)
 public class QueuePollingController {
 
     private static final Logger log = LoggerFactory.getLogger(QueuePollingController.class);

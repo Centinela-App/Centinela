@@ -1,31 +1,23 @@
 package com.centinela.casemanagement.domain.model;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
-/**
- * Caso generado a partir de una transacción flagged.
- *
- * <p>Representa el caso inicial creado cuando el motor de scoring detecta
- * comportamiento sospechoso y coloca un mensaje en la cola de casos.
- */
+/** Caso generado a partir de un mensaje {@code flagged-case-v1}. */
 public record Case_(
-        String caseId,
+        Long caseId,
         String transactionId,
+        BigDecimal score,
         CaseStatus status,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt) {
 
-    /**
-     * Estados posibles de un caso.
-     */
     public enum CaseStatus {
-        /** Caso recién creado, pendiente de revisión por analista. */
-        OPEN,
-
-        /** Caso en proceso de investigación. */
+        NEW,
         UNDER_REVIEW,
-
-        /** Caso cerrado con resolución. */
-        CLOSED
+        PENDING_INFO,
+        ESCALATED,
+        RESOLVED,
+        DISMISSED
     }
 }

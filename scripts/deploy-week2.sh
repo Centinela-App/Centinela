@@ -28,7 +28,8 @@ PROVISION_STEPS=(
   "provision-postgres.sh"    # ISS-S2-002  almacen de casos (PostgreSQL privado)
   "provision-keyvault.sh"    # ISS-S2-003  gestor de secretos
   "provision-eventgrid.sh"   # ISS-S2-005  mensajeria (evento + cola de casos)
-  "deploy-scoring-function.sh" # ISS-S2-007  despliegue del modulo scoring-function
+  "configure-function-host-storage.sh" # ISS-S2-007 host Storage privado (Table)
+  "configure-postgres-managed-identity.sh" # ISS-S2-002/010/011 principal DB + JDBC MI
 )
 
 main() {
@@ -63,6 +64,19 @@ main() {
       log_warn "Paso pendiente (issue futura): $step"
     fi
   done
+
+  require_cmd mvn
+  log_info "Verificando la app principal antes de desplegar el consumidor de casos..."
+  (cd "$SCRIPT_DIR/.." && mvn -q clean verify)
+  log_info "Desplegando primero en produccion para que Flyway aplique el esquema con su propia identidad..."
+  bash "$SCRIPT_DIR/deploy-application.sh" --slot production
+  log_info "Reaplicando grants sobre las tablas creadas por Flyway para la identidad de staging..."
+  bash "$SCRIPT_DIR/configure-postgres-managed-identity.sh"
+  log_info "Desplegando el mismo artefacto corregido en staging..."
+  bash "$SCRIPT_DIR/deploy-application.sh" --slot staging
+
+  log_info "Desplegando la Function de scoring cuando ambos consumidores ya estan disponibles..."
+  bash "$SCRIPT_DIR/deploy-scoring-function.sh"
   log_info "Despliegue de Semana 2 completado."
 }
 
