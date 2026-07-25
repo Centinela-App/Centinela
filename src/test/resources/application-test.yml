@@ -15,6 +15,10 @@ spring:
 
 # Desactivar seguridad para tests
 centinela:
+  queue:
+    adapter: disabled
+    consumer:
+      auto-start: false
   security:
     entra:
       issuer-uri: http://localhost

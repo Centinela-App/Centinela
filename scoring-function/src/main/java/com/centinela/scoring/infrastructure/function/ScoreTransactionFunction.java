@@ -1,39 +1,51 @@
 package com.centinela.scoring.infrastructure.function;
 
-import com.azure.cosmos.CosmosClient;
-import com.azure.cosmos.CosmosClientBuilder;
-import com.azure.cosmos.CosmosContainer;
+import com.azure.identity.DefaultAzureCredential;
 import com.azure.identity.DefaultAzureCredentialBuilder;
+import com.azure.storage.blob.BlobServiceClient;
+import com.azure.storage.blob.BlobServiceClientBuilder;
+import com.azure.storage.queue.QueueClient;
+import com.azure.storage.queue.QueueClientBuilder;
 import com.centinela.scoring.application.config.ScoringThresholdProvider;
+import com.centinela.scoring.application.port.out.RawTransactionReaderPort;
 import com.centinela.scoring.application.port.out.TransactionHistoryPort;
 import com.centinela.scoring.application.service.ScoreTransactionService;
 import com.centinela.scoring.domain.model.HistoricalTransaction;
 import com.centinela.scoring.domain.model.Score;
 import com.centinela.scoring.domain.model.TransactionEvent;
-import com.centinela.scoring.infrastructure.cosmos.CosmosTransactionHistoryAdapter;
+import com.centinela.scoring.domain.model.TransactionEventNotification;
+import com.centinela.scoring.infrastructure.blob.BlobRawTransactionReaderAdapter;
+import com.centinela.scoring.infrastructure.config.KeyVaultConnectionStrings;
+import com.centinela.scoring.infrastructure.mongo.CosmosMongoScorePersistenceAdapter;
+import com.centinela.scoring.infrastructure.mongo.CosmosMongoTransactionHistoryAdapter;
+import com.centinela.scoring.infrastructure.queue.StorageQueueFlaggedCasePublisher;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.microsoft.azure.functions.ExecutionContext;
 import com.microsoft.azure.functions.annotation.EventGridTrigger;
 import com.microsoft.azure.functions.annotation.FunctionName;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoCollection;
+import org.bson.Document;
 
+import java.time.Clock;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.logging.Level;
 
-/**
- * Azure Function que se activa por Event Grid ({@code transaction-event-v1}),
- * recupera el historial de la cuenta desde Cosmos DB y ejecuta el scoring
- * con las 4 reglas puras de dominio (ISS-S2-008).
- */
+/** Function integrada: contrato -> Blob -> historial Mongo -> reglas -> score -> cola. */
 public final class ScoreTransactionFunction {
-
-    private static volatile TransactionHistoryPort historyPort;
-    private static volatile ScoreTransactionService scoreService;
     private static final Object INIT_LOCK = new Object();
+    private static volatile RuntimeDependencies runtime;
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
             .registerModule(new JavaTimeModule())
+            .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
     @FunctionName("ScoreTransaction")
@@ -41,100 +53,98 @@ public final class ScoreTransactionFunction {
             @EventGridTrigger(name = "event") String eventPayload,
             ExecutionContext context) {
         try {
-            com.fasterxml.jackson.databind.JsonNode rootNode = OBJECT_MAPPER.readTree(eventPayload);
-            com.fasterxml.jackson.databind.JsonNode dataNode = rootNode.has("data") ? rootNode.get("data") : rootNode;
-            TransactionEvent transaction = OBJECT_MAPPER.treeToValue(dataNode, TransactionEvent.class);
+            TransactionEventNotification notification = parseNotification(eventPayload);
+            RuntimeDependencies dependencies = runtime();
+            TransactionEvent transaction = dependencies.rawTransactionReader().read(notification);
 
-            context.getLogger().info(
-                    "transaction-event-v1 received, accountId=" + transaction.accountId()
-                            + " transactionId=" + transaction.transactionId());
+            context.getLogger().info("transaction-event-v1 received accountId="
+                    + notification.accountId() + " transactionId=" + notification.transactionId());
 
-            List<HistoricalTransaction> history = historyPort()
-                    .recentHistory(transaction.accountId(), transaction.occurredAt());
+            List<HistoricalTransaction> history = dependencies.historyPort()
+                    .recentHistory(notification.accountId(), notification.occurredAt());
+            Score score = dependencies.scoreServiceFor(notification).executeScoring(transaction, history);
 
-            context.getLogger().info(
-                    "history retrieved accountId=" + transaction.accountId()
-                            + " historySize=" + history.size());
-
-            Score score = scoreService().executeScoring(transaction, history);
-
-            context.getLogger().info(
-                    "scoring completed accountId=" + transaction.accountId()
-                            + " totalScore=" + score.totalScore()
-                            + " triggeredRules=" + score.triggeredRules().size());
-
+            context.getLogger().info("scoring completed transactionId=" + score.transactionId()
+                    + " totalScore=" + score.totalScore()
+                    + " triggeredRules=" + score.triggeredRules().size());
         } catch (Exception exception) {
             context.getLogger().log(Level.SEVERE, "Failed to process transaction-event-v1", exception);
             throw new RuntimeException("Failed to process transaction-event-v1", exception);
         }
     }
 
-    private static ScoreTransactionService scoreService() {
-        ScoreTransactionService current = scoreService;
+    private static TransactionEventNotification parseNotification(String eventPayload) throws Exception {
+        JsonNode root = OBJECT_MAPPER.readTree(eventPayload);
+        JsonNode data = root.has("data") ? root.get("data") : root;
+        if (data.isTextual()) {
+            data = OBJECT_MAPPER.readTree(data.asText());
+        }
+        return OBJECT_MAPPER.treeToValue(data, TransactionEventNotification.class);
+    }
+
+    private static RuntimeDependencies runtime() {
+        RuntimeDependencies current = runtime;
         if (current == null) {
             synchronized (INIT_LOCK) {
-                current = scoreService;
+                current = runtime;
                 if (current == null) {
-                    ScoringThresholdProvider provider = new ScoringThresholdProvider();
-                    current = new ScoreTransactionService(provider);
-                    scoreService = current;
+                    current = buildRuntime();
+                    runtime = current;
                 }
             }
         }
         return current;
     }
 
-    private static TransactionHistoryPort historyPort() {
-        TransactionHistoryPort current = historyPort;
-        if (current == null) {
-            synchronized (INIT_LOCK) {
-                current = historyPort;
-                if (current == null) {
-                    current = buildHistoryPort();
-                    historyPort = current;
-                }
-            }
-        }
-        return current;
-    }
+    private static RuntimeDependencies buildRuntime() {
+        DefaultAzureCredential credential = new DefaultAzureCredentialBuilder().build();
+        String storageAccount = requiredEnv("CENTINELA_STORAGE_ACCOUNT");
+        String productionContainer = requiredEnv("CENTINELA_RAW_TRANSACTIONS_CONTAINER_PRODUCTION");
+        String stagingContainer = requiredEnv("CENTINELA_RAW_TRANSACTIONS_CONTAINER_STAGING");
+        String productionQueue = requiredEnv("CENTINELA_FLAGGED_CASES_QUEUE_PRODUCTION");
+        String stagingQueue = requiredEnv("CENTINELA_FLAGGED_CASES_QUEUE_STAGING");
 
-    private static TransactionHistoryPort buildHistoryPort() {
-        CosmosClient cosmosClient;
-        String keyVaultUri = System.getenv("KEY_VAULT_URI");
-        if (keyVaultUri != null && !keyVaultUri.isBlank()) {
-            com.centinela.scoring.infrastructure.config.KeyVaultConnectionStrings keyVault =
-                    new com.centinela.scoring.infrastructure.config.KeyVaultConnectionStrings();
-            String connString = keyVault.cosmosConnectionString();
-            CosmosClientBuilder builder = new CosmosClientBuilder();
-            String endpoint = null;
-            String key = null;
-            for (String part : connString.split(";")) {
-                if (part.startsWith("AccountEndpoint=")) {
-                    endpoint = part.substring("AccountEndpoint=".length());
-                } else if (part.startsWith("AccountKey=")) {
-                    key = part.substring("AccountKey=".length());
-                }
-            }
-            if (endpoint != null) {
-                builder.endpoint(endpoint);
-            }
-            if (key != null && !key.isBlank()) {
-                builder.key(key);
-            } else {
-                builder.credential(new DefaultAzureCredentialBuilder().build());
-            }
-            cosmosClient = builder.buildClient();
-        } else {
-            String endpoint = requiredEnv("COSMOS_ENDPOINT");
-            cosmosClient = new CosmosClientBuilder()
-                    .endpoint(endpoint)
-                    .credential(new DefaultAzureCredentialBuilder().build())
-                    .buildClient();
-        }
-        CosmosContainer container = cosmosClient
+        BlobServiceClient blobServiceClient = new BlobServiceClientBuilder()
+                .endpoint("https://" + storageAccount + ".blob.core.windows.net")
+                .credential(credential)
+                .buildClient();
+
+        KeyVaultConnectionStrings secrets = new KeyVaultConnectionStrings();
+        MongoClient mongoClient = MongoClients.create(secrets.cosmosMongoConnectionString());
+        MongoCollection<Document> collection = mongoClient
                 .getDatabase(requiredEnv("COSMOS_DATABASE"))
-                .getContainer(requiredEnv("COSMOS_TRANSACTIONS_CONTAINER"));
-        return new CosmosTransactionHistoryAdapter(container);
+                .getCollection(requiredEnv("COSMOS_COLLECTION"));
+
+        RawTransactionReaderPort reader = new BlobRawTransactionReaderAdapter(
+                blobServiceClient, OBJECT_MAPPER, Set.of(productionContainer, stagingContainer));
+        TransactionHistoryPort history = new CosmosMongoTransactionHistoryAdapter(collection);
+        CosmosMongoScorePersistenceAdapter persistence = new CosmosMongoScorePersistenceAdapter(collection);
+        ScoringThresholdProvider threshold = new ScoringThresholdProvider();
+
+        Map<String, ScoreTransactionService> servicesByContainer = Map.of(
+                productionContainer, scoreService(storageAccount, productionQueue, credential, threshold, persistence),
+                stagingContainer, scoreService(storageAccount, stagingQueue, credential, threshold, persistence));
+
+        return new RuntimeDependencies(mongoClient, reader, history, servicesByContainer);
+    }
+
+    private static ScoreTransactionService scoreService(
+            String storageAccount,
+            String queueName,
+            DefaultAzureCredential credential,
+            ScoringThresholdProvider threshold,
+            CosmosMongoScorePersistenceAdapter persistence) {
+        QueueClient queueClient = new QueueClientBuilder()
+                .endpoint("https://" + storageAccount + ".queue.core.windows.net")
+                .queueName(queueName)
+                .credential(credential)
+                .buildClient();
+        return new ScoreTransactionService(
+                ScoreTransactionService.defaultRules(threshold),
+                threshold,
+                persistence,
+                new StorageQueueFlaggedCasePublisher(queueClient, OBJECT_MAPPER),
+                Clock.systemUTC());
     }
 
     private static String requiredEnv(String name) {
@@ -143,5 +153,21 @@ public final class ScoreTransactionFunction {
             throw new IllegalStateException("Missing required App Setting: " + name);
         }
         return value;
+    }
+
+    private record RuntimeDependencies(
+            MongoClient mongoClient,
+            RawTransactionReaderPort rawTransactionReader,
+            TransactionHistoryPort historyPort,
+            Map<String, ScoreTransactionService> servicesByContainer) {
+
+        ScoreTransactionService scoreServiceFor(TransactionEventNotification notification) {
+            String container = BlobRawTransactionReaderAdapter.containerFrom(notification.blobPath());
+            ScoreTransactionService service = servicesByContainer.get(container);
+            if (service == null) {
+                throw new IllegalArgumentException("No scoring route configured for Blob container " + container);
+            }
+            return service;
+        }
     }
 }

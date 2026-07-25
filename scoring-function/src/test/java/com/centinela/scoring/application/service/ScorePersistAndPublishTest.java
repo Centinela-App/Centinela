@@ -1,316 +1,106 @@
 package com.centinela.scoring.application.service;
 
+import com.centinela.scoring.application.config.ScoringThresholdProvider;
 import com.centinela.scoring.application.port.out.FlaggedCasePublisherPort;
 import com.centinela.scoring.application.port.out.ScorePersistencePort;
 import com.centinela.scoring.domain.model.RuleHit;
 import com.centinela.scoring.domain.model.Score;
+import com.centinela.scoring.domain.model.TransactionEvent;
+import com.centinela.scoring.domain.rule.ScoringRule;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
-/**
- * Tests para ScoreTransactionService que verifican:
- * - TEST-S2-016: Score + detalle persistidos en Cosmos
- * - TEST-S2-017: Caso encolado solo si supera umbral
- */
-@ExtendWith(MockitoExtension.class)
 class ScorePersistAndPublishTest {
-
-    @Mock
-    private ScoreTransactionService.ScoreCalculationPort scoreCalculationPort;
-
-    @Mock
-    private ScorePersistencePort scorePersistencePort;
-
-    @Mock
-    private FlaggedCasePublisherPort flaggedCasePublisherPort;
-
-    private ScoreTransactionService service;
-    private Clock fixedClock;
+    private ScorePersistencePort persistence;
+    private FlaggedCasePublisherPort publisher;
+    private TransactionEvent transaction;
+    private Clock clock;
 
     @BeforeEach
     void setUp() {
-        fixedClock = Clock.fixed(
-                Instant.parse("2024-01-15T10:30:00Z"),
-                ZoneOffset.UTC
-        );
-        service = new ScoreTransactionService(
-                scoreCalculationPort,
-                scorePersistencePort,
-                flaggedCasePublisherPort,
-                50, // umbral
-                fixedClock
-        );
+        persistence = mock(ScorePersistencePort.class);
+        publisher = mock(FlaggedCasePublisherPort.class);
+        clock = Clock.fixed(Instant.parse("2026-07-25T15:00:00Z"), ZoneOffset.UTC);
+        transaction = new TransactionEvent(
+                "tx-001", "acc-001", new BigDecimal("5000"), "USD",
+                OffsetDateTime.parse("2026-07-25T14:59:00Z"),
+                new TransactionEvent.EventLocation("CO", "Bogota", new BigDecimal("4.71"), new BigDecimal("-74.07")),
+                new TransactionEvent.EventMerchant("Merchant", "retail"));
     }
 
-    @Nested
-    @DisplayName("TEST-S2-016: Score + detalle persistidos en Cosmos")
-    class PersistenciaScore {
+    @Test
+    void persists_score_and_publishes_when_threshold_is_reached() {
+        ScoringRule rule = rule("ATYPICAL_AMOUNT", Optional.of(new RuleHit(
+                "ATYPICAL_AMOUNT", "Monto atipico", 60, Map.of("amount", 5000))));
+        ScoreTransactionService service = service(rule, 50);
 
-        @Test
-        @DisplayName("Debe persistir el score con su detalle al ejecutar scoring")
-        void debePersistirScoreConDetalle() {
-            // Given
-            String transactionId = "txn-001";
-            String accountId = "acc-001";
+        Score score = service.executeScoring(transaction, List.of());
 
-            List<RuleHit> triggeredRules = List.of(
-                    new RuleHit("velocity", "Velocidad", 20,
-                            Map.of("countInWindow", 5, "windowMinutes", 60)),
-                    new RuleHit("atypical-amount", "Monto Atípico", 15,
-                            Map.of("currentAmount", 5000.00, "averageAmount", 500.00))
-            );
-
-            Score expectedScore = new Score(
-                    transactionId,
-                    accountId,
-                    35,
-                    triggeredRules,
-                    fixedClock.instant()
-            );
-
-            when(scoreCalculationPort.calculateScore(eq(transactionId), eq(accountId), any()))
-                    .thenReturn(expectedScore);
-
-            // When
-            Score result = service.executeScoring(transactionId, accountId);
-
-            // Then
-            assertThat(result.totalScore()).isEqualTo(35);
-            assertThat(result.triggeredRules()).hasSize(2);
-
-            // Verificar que se persistio el score
-            ArgumentCaptor<Score> scoreCaptor = ArgumentCaptor.forClass(Score.class);
-            verify(scorePersistencePort).persistScore(scoreCaptor.capture());
-
-            Score persistedScore = scoreCaptor.getValue();
-            assertThat(persistedScore.transactionId()).isEqualTo(transactionId);
-            assertThat(persistedScore.accountId()).isEqualTo(accountId);
-            assertThat(persistedScore.totalScore()).isEqualTo(35);
-            assertThat(persistedScore.triggeredRules()).hasSize(2);
-        }
-
-        @Test
-        @DisplayName("Debe incluir los valores observados en el detalle de activacion")
-        void debeIncluirValoresObservados() {
-            // Given
-            String transactionId = "txn-002";
-            String accountId = "acc-002";
-
-            Map<String, Object> observedValues = Map.of(
-                    "countInWindow", 8,
-                    "windowMinutes", 60,
-                    "maxAllowed", 5
-            );
-
-            List<RuleHit> triggeredRules = List.of(
-                    new RuleHit("velocity", "Velocidad", 30, observedValues)
-            );
-
-            Score expectedScore = new Score(
-                    transactionId,
-                    accountId,
-                    30,
-                    triggeredRules,
-                    fixedClock.instant()
-            );
-
-            when(scoreCalculationPort.calculateScore(eq(transactionId), eq(accountId), any()))
-                    .thenReturn(expectedScore);
-
-            // When
-            service.executeScoring(transactionId, accountId);
-
-            // Then
-            ArgumentCaptor<Score> scoreCaptor = ArgumentCaptor.forClass(Score.class);
-            verify(scorePersistencePort).persistScore(scoreCaptor.capture());
-
-            Score persistedScore = scoreCaptor.getValue();
-            RuleHit ruleHit = persistedScore.triggeredRules().get(0);
-
-            assertThat(ruleHit.observedValues())
-                    .containsEntry("countInWindow", 8)
-                    .containsEntry("windowMinutes", 60)
-                    .containsEntry("maxAllowed", 5);
-        }
+        assertThat(score.totalScore()).isEqualTo(60);
+        verify(persistence).persistScore(transaction, score);
+        verify(publisher).publishFlaggedCase(score);
     }
 
-    @Nested
-    @DisplayName("TEST-S2-017: Caso encolado solo si supera umbral")
-    class PublicacionCaso {
+    @Test
+    void persists_but_does_not_publish_below_threshold() {
+        ScoringRule rule = rule("VELOCITY", Optional.of(new RuleHit(
+                "VELOCITY", "Velocidad", 20, Map.of("count", 2))));
+        ScoreTransactionService service = service(rule, 50);
 
-        @Test
-        @DisplayName("Debe encolar caso cuando score supera el umbral")
-        void debeEncolarCasoCuandoSuperaUmbral() {
-            // Given
-            String transactionId = "txn-003";
-            String accountId = "acc-003";
+        Score score = service.executeScoring(transaction, List.of());
 
-            List<RuleHit> triggeredRules = List.of(
-                    new RuleHit("velocity", "Velocidad", 30,
-                            Map.of("countInWindow", 10)),
-                    new RuleHit("risky-merchant", "Comercio de Riesgo", 25,
-                            Map.of("merchantCategory", "gambling"))
-            );
-
-            // Score = 55, supera el umbral de 50
-            Score expectedScore = new Score(
-                    transactionId,
-                    accountId,
-                    55,
-                    triggeredRules,
-                    fixedClock.instant()
-            );
-
-            when(scoreCalculationPort.calculateScore(eq(transactionId), eq(accountId), any()))
-                    .thenReturn(expectedScore);
-
-            // When
-            Score result = service.executeScoring(transactionId, accountId);
-
-            // Then
-            assertThat(result.totalScore()).isEqualTo(55);
-
-            verify(flaggedCasePublisherPort).publishFlaggedCase(expectedScore);
-        }
-
-        @Test
-        @DisplayName("No debe encolar caso cuando score no supera el umbral")
-        void noDebeEncolarCasoCuandoNoSuperaUmbral() {
-            // Given
-            String transactionId = "txn-004";
-            String accountId = "acc-004";
-
-            List<RuleHit> triggeredRules = List.of(
-                    new RuleHit("geo", "Geo-Imposible", 20,
-                            Map.of("distanceKm", 100, "timeMinutes", 5))
-            );
-
-            // Score = 20, NO supera el umbral de 50
-            Score expectedScore = new Score(
-                    transactionId,
-                    accountId,
-                    20,
-                    triggeredRules,
-                    fixedClock.instant()
-            );
-
-            when(scoreCalculationPort.calculateScore(eq(transactionId), eq(accountId), any()))
-                    .thenReturn(expectedScore);
-
-            // When
-            Score result = service.executeScoring(transactionId, accountId);
-
-            // Then
-            assertThat(result.totalScore()).isEqualTo(20);
-
-            verify(flaggedCasePublisherPort, never()).publishFlaggedCase(any());
-        }
-
-        @Test
-        @DisplayName("Debe encolar caso cuando score es exactamente igual al umbral")
-        void debeEncolarCasoCuandoScoreIgualUmbral() {
-            // Given
-            String transactionId = "txn-005";
-            String accountId = "acc-005";
-
-            List<RuleHit> triggeredRules = List.of(
-                    new RuleHit("velocity", "Velocidad", 50,
-                            Map.of("countInWindow", 15))
-            );
-
-            // Score = 50, exactamente el umbral
-            Score expectedScore = new Score(
-                    transactionId,
-                    accountId,
-                    50,
-                    triggeredRules,
-                    fixedClock.instant()
-            );
-
-            when(scoreCalculationPort.calculateScore(eq(transactionId), eq(accountId), any()))
-                    .thenReturn(expectedScore);
-
-            // When
-            Score result = service.executeScoring(transactionId, accountId);
-
-            // Then
-            assertThat(result.totalScore()).isEqualTo(50);
-            verify(flaggedCasePublisherPort).publishFlaggedCase(expectedScore);
-        }
-
-        @Test
-        @DisplayName("No debe encolar caso cuando no hay reglas activadas")
-        void noDebeEncolarCasoSinReglasActivadas() {
-            // Given
-            String transactionId = "txn-006";
-            String accountId = "acc-006";
-
-            // Score = 0, ninguna regla activada
-            Score expectedScore = new Score(
-                    transactionId,
-                    accountId,
-                    0,
-                    List.of(),
-                    fixedClock.instant()
-            );
-
-            when(scoreCalculationPort.calculateScore(eq(transactionId), eq(accountId), any()))
-                    .thenReturn(expectedScore);
-
-            // When
-            Score result = service.executeScoring(transactionId, accountId);
-
-            // Then
-            assertThat(result.totalScore()).isEqualTo(0);
-            verify(flaggedCasePublisherPort, never()).publishFlaggedCase(any());
-        }
+        verify(persistence).persistScore(transaction, score);
+        verify(publisher, never()).publishFlaggedCase(any());
     }
 
-    @Nested
-    @DisplayName("Idempotencia")
-    class Idempotencia {
+    @Test
+    void does_not_publish_empty_rule_set_even_with_zero_threshold() {
+        ScoringRule rule = rule("NO_HIT", Optional.empty());
+        ScoreTransactionService service = service(rule, 0);
 
-        @Test
-        @DisplayName("Debe persistir score aunque no se publique caso")
-        void debePersistirAunqueNoPubliqueCaso() {
-            // Given
-            String transactionId = "txn-007";
-            String accountId = "acc-007";
+        Score score = service.executeScoring(transaction, List.of());
 
-            Score expectedScore = new Score(
-                    transactionId,
-                    accountId,
-                    10,
-                    List.of(new RuleHit("velocity", "Velocidad", 10,
-                            Map.of("countInWindow", 2))),
-                    fixedClock.instant()
-            );
+        verify(persistence).persistScore(transaction, score);
+        verify(publisher, never()).publishFlaggedCase(any());
+    }
 
-            when(scoreCalculationPort.calculateScore(eq(transactionId), eq(accountId), any()))
-                    .thenReturn(expectedScore);
+    private ScoringRule rule(String ruleId, Optional<RuleHit> result) {
+        return new ScoringRule() {
+            @Override
+            public String ruleId() {
+                return ruleId;
+            }
 
-            // When
-            service.executeScoring(transactionId, accountId);
+            @Override
+            public Optional<RuleHit> evaluate(
+                    TransactionEvent transaction,
+                    List<com.centinela.scoring.domain.model.HistoricalTransaction> history) {
+                return result;
+            }
+        };
+    }
 
-            // Then - siempre persiste, aunque no publique caso
-            verify(scorePersistencePort).persistScore(expectedScore);
-            verify(flaggedCasePublisherPort, never()).publishFlaggedCase(any());
-        }
+    private ScoreTransactionService service(ScoringRule rule, int threshold) {
+        return new ScoreTransactionService(
+                List.of(rule),
+                new ScoringThresholdProvider(() -> threshold, null, null),
+                persistence,
+                publisher,
+                clock);
     }
 }

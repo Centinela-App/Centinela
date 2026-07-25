@@ -22,6 +22,8 @@
         <jackson.version>2.18.2</jackson.version>
         <junit.version>5.11.4</junit.version>
         <mockito.version>5.14.2</mockito.version>
+        <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
+        <maven.resources.plugin.version>3.3.1</maven.resources.plugin.version>
 
         <!-- Usados por azure-functions-maven-plugin al empaquetar/desplegar. -->
         <functionAppName>cent-scoring-fn</functionAppName>
@@ -50,10 +52,17 @@
             <version>${azure.functions.java.library.version}</version>
         </dependency>
 
-        <!-- Lectura/escritura en Cosmos por clave de particion (accountId). -->
+        <!-- Cosmos DB for MongoDB: la infraestructura de ISS-S2-001 usa API Mongo. -->
+        <dependency>
+            <groupId>org.mongodb</groupId>
+            <artifactId>mongodb-driver-sync</artifactId>
+            <version>5.2.1</version>
+        </dependency>
+
+        <!-- Lectura del JSON crudo referenciado por blobPath. -->
         <dependency>
             <groupId>com.azure</groupId>
-            <artifactId>azure-cosmos</artifactId>
+            <artifactId>azure-storage-blob</artifactId>
         </dependency>
 
         <!-- Cola de casos marcados (flagged-case-v1). -->
@@ -119,6 +128,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
+                <version>${maven.compiler.plugin.version}</version>
                 <configuration>
                     <release>${java.version}</release>
                 </configuration>
@@ -158,6 +168,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
+                <version>${maven.resources.plugin.version}</version>
                 <executions>
                     <execution>
                         <id>copy-host-json</id>

@@ -6,13 +6,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import com.centinela.casemanagement.application.port.in.OpenCaseUseCase;
 import com.centinela.casemanagement.domain.model.Case_;
-import com.centinela.casemanagement.domain.model.FlaggedCaseMessage;
+import com.centinela.shared.event.FlaggedCaseMessage;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
@@ -46,6 +49,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * </pre>
  */
 @Component
+@ConditionalOnProperty(name = "centinela.queue.adapter", havingValue = "azure-storage-queue", matchIfMissing = true)
 public class FlaggedCaseQueueListener {
 
     private static final Logger log = LoggerFactory.getLogger(FlaggedCaseQueueListener.class);
@@ -63,6 +67,7 @@ public class FlaggedCaseQueueListener {
     /**
      * Constructor principal para inyección de dependencias.
      */
+    @Autowired
     public FlaggedCaseQueueListener(
             OpenCaseUseCase openCaseUseCase,
             QueueReceiver queueReceiver,
@@ -73,7 +78,8 @@ public class FlaggedCaseQueueListener {
         this.openCaseUseCase = openCaseUseCase;
         this.queueReceiver = queueReceiver;
         this.messageDeleter = messageDeleter;
-        this.objectMapper = objectMapper;
+        this.objectMapper = objectMapper.copy()
+                .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
         this.visibilityTimeout = visibilityTimeout;
         this.pollInterval = pollInterval;
     }
@@ -86,7 +92,7 @@ public class FlaggedCaseQueueListener {
             ObjectMapper objectMapper) {
         this(openCaseUseCase,
                 (Duration visibilityTimeout, int maxMessages) -> { throw new UnsupportedOperationException("No-op in test constructor"); },
-                messageId -> { throw new UnsupportedOperationException("No-op in test constructor"); },
+                (messageId, popReceipt) -> { throw new UnsupportedOperationException("No-op in test constructor"); },
                 objectMapper,
                 Duration.ofSeconds(30),
                 Duration.ofSeconds(5));
@@ -214,7 +220,7 @@ public class FlaggedCaseQueueListener {
      *
      * @param message el mensaje de la cola a procesar
      */
-    private void processMessage(QueueMessage message) {
+    void processMessage(QueueMessage message) {
         String messageId = message.messageId();
         FlaggedCaseMessage flaggedMessage;
 
@@ -233,7 +239,7 @@ public class FlaggedCaseQueueListener {
             log.info("Case {} created for transaction {}", createdCase.caseId(), flaggedMessage.transactionId());
 
             // Eliminar mensaje SOLO tras confirmar la escritura
-            messageDeleter.deleteMessage(messageId);
+            messageDeleter.deleteMessage(messageId, message.popReceipt());
             log.debug("Message {} deleted from queue after successful commit", messageId);
 
         } catch (Exception e) {
@@ -283,7 +289,7 @@ public class FlaggedCaseQueueListener {
      */
     @FunctionalInterface
     public interface MessageDeleter {
-        void deleteMessage(String messageId);
+        void deleteMessage(String messageId, String popReceipt);
     }
 
     /**

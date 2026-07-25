@@ -13,8 +13,8 @@
 #         staging) SOBRE EL TOPICO -> habilita a la API a publicar (ISS-S2-006).
 #       * (opcional) "Storage Queue Data Message Sender" a la identidad de la
 #         Function sobre las colas de casos (encolar; ISS-S2-009).
-#       * (opcional) "Storage Queue Data Message Processor" a la identidad del
-#         consumidor sobre las colas de casos (procesar; ISS-S2-011).
+#       * "Storage Queue Data Message Processor" a las identidades de la Web App
+#         sobre su cola de ambiente (procesar; ISS-S2-011).
 #   - Aplicar tags de trazabilidad. Idempotente: reejecutar converge sin duplicar.
 #
 # FUERA de alcance (no lo hace este script, por diseno):
@@ -215,7 +215,7 @@ assign_publisher_roles() {
 }
 
 assign_queue_roles() {
-  local sa_id="$1" q scope
+  local sa_id="$1" app_name="$2" rg="$3" q scope prod_pid staging_pid
   if [ -n "$FUNCTION_PRINCIPAL" ]; then
     log_info "Asignando '$QUEUE_SENDER_ROLE' a la Function sobre las colas de casos..."
     for q in "${CASE_QUEUES[@]}"; do
@@ -227,14 +227,36 @@ assign_queue_roles() {
   fi
 
   if [ -n "$CONSUMER_PRINCIPAL" ]; then
-    log_info "Asignando '$QUEUE_PROCESSOR_ROLE' al consumidor sobre las colas de casos..."
+    log_info "Asignando '$QUEUE_PROCESSOR_ROLE' al consumidor explicito sobre ambas colas..."
     for q in "${CASE_QUEUES[@]}"; do
       scope="${sa_id}/queueServices/default/queues/${q}"
       assign_role_scope "$CONSUMER_PRINCIPAL" "ServicePrincipal" "$QUEUE_PROCESSOR_ROLE" "$scope"
     done
   else
-    log_warn "Sin --consumer-principal: rol de procesado (consumidor) DIFERIDO a cuando exista su identidad (ISS-S2-011)."
+    prod_pid="$(az webapp identity show --name "$app_name" --resource-group "$rg" \
+      --query principalId -o tsv 2>/dev/null || true)"
+    staging_pid="$(az webapp identity show --name "$app_name" --resource-group "$rg" \
+      --slot "$SLOT_NAME" --query principalId -o tsv 2>/dev/null || true)"
+    [ -n "$prod_pid" ] || die "Web App de produccion sin Managed Identity para consumir Queue."
+    [ -n "$staging_pid" ] || die "Slot staging sin Managed Identity para consumir Queue."
+
+    log_info "Asignando '$QUEUE_PROCESSOR_ROLE' por ambiente..."
+    assign_role_scope "$prod_pid" "ServicePrincipal" "$QUEUE_PROCESSOR_ROLE" \
+      "${sa_id}/queueServices/default/queues/flagged-cases-production"
+    assign_role_scope "$staging_pid" "ServicePrincipal" "$QUEUE_PROCESSOR_ROLE" \
+      "${sa_id}/queueServices/default/queues/flagged-cases-staging"
   fi
+}
+
+wire_topic_endpoint() {
+  local topic="$1" rg="$2" app_name="$3" endpoint
+  endpoint="$(az eventgrid topic show --name "$topic" --resource-group "$rg" --query endpoint -o tsv)"
+  [ -n "$endpoint" ] || die "No se pudo resolver el endpoint del topico '$topic'."
+  log_info "Configurando CENTINELA_EVENTGRID_TOPIC_ENDPOINT en produccion y staging..."
+  with_retry 3 az webapp config appsettings set --name "$app_name" --resource-group "$rg" \
+    --settings "CENTINELA_EVENTGRID_TOPIC_ENDPOINT=$endpoint" --output none
+  with_retry 3 az webapp config appsettings set --name "$app_name" --resource-group "$rg" \
+    --slot "$SLOT_NAME" --settings "CENTINELA_EVENTGRID_TOPIC_ENDPOINT=$endpoint" --output none
 }
 
 # --- Main ----------------------------------------------------------------------
@@ -270,10 +292,11 @@ main() {
 
   # 2) Colas de casos (garantizan el procesamiento aunque el consumidor este caido).
   ensure_case_queues "$sa_name" "$RESOURCE_GROUP"
+  wire_topic_endpoint "$topic_name" "$RESOURCE_GROUP" "$app_name"
 
   # 3) RBAC de minimo privilegio.
   assign_publisher_roles "$topic_id" "$app_name" "$RESOURCE_GROUP"
-  assign_queue_roles "$sa_id"
+  assign_queue_roles "$sa_id" "$app_name" "$RESOURCE_GROUP"
 
   log_info "NOTA: la SUSCRIPCION del topico NO se crea aqui; la conecta la Function en ISS-S2-007 (evita dependencia circular)."
   log_info "ISS-S2-005 OK: Event Grid Topic + ${#CASE_QUEUES[@]} colas de casos + RBAC de mensajeria listos."

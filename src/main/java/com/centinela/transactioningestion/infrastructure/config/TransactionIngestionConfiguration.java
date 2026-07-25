@@ -47,6 +47,7 @@ public class TransactionIngestionConfiguration {
     }
 
     @Bean
+    @Profile("!test")
     BlobContainerClient rawTransactionBlobContainerClient(RawTransactionBlobProperties properties) {
         return new BlobServiceClientBuilder()
                 .endpoint(properties.endpoint())
@@ -56,6 +57,7 @@ public class TransactionIngestionConfiguration {
     }
 
     @Bean
+    @Profile("!test")
     RawTransactionStoragePort rawTransactionStoragePort(
             BlobContainerClient rawTransactionBlobContainerClient,
             ObjectMapper objectMapper,
@@ -64,6 +66,18 @@ public class TransactionIngestionConfiguration {
                 rawTransactionBlobContainerClient,
                 objectMapper,
                 blobPathFactory);
+    }
+
+    /**
+     * Adaptador no-op para pruebas de contexto. Evita construir clientes Azure
+     * cuando otro flujo carga toda la aplicacion y no necesita Blob Storage.
+     * Las pruebas del endpoint reemplazan este bean con {@code @MockBean}.
+     */
+    @Bean
+    @Profile("test")
+    RawTransactionStoragePort noOpRawTransactionStoragePort() {
+        return (transaction, receivedAt) -> {
+        };
     }
 
     @Bean

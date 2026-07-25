@@ -5,6 +5,8 @@ spring:
   # FEAT-S2-001: Configuracion de PostgreSQL para gestion de casos.
   # La conexion NO usa password; usa Managed Identity via env vars inyectadas.
   datasource:
+    # In Azure, CENTINELA_POSTGRES_JDBC_URL must include:
+    # sslmode=require&authenticationPluginClassName=com.azure.identity.extensions.jdbc.postgresql.AzurePostgresqlAuthenticationPlugin
     url: ${CENTINELA_POSTGRES_JDBC_URL:jdbc:postgresql://localhost:5432/centinela}
     username: ${CENTINELA_POSTGRES_USER:}
     driver-class-name: org.postgresql.Driver
@@ -42,7 +44,7 @@ centinela:
   queue:
     adapter: azure-storage-queue
     flagged-cases:
-      name: ${CENTINELA_FLAGGED_CASES_QUEUE:flagged-cases}
+      name: ${CENTINELA_FLAGGED_CASES_QUEUE:flagged-cases-production}
       visibility-timeout: PT30S
       poll-interval: PT5S
     consumer:

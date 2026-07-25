@@ -51,6 +51,10 @@ readonly TAGS=(
   "issue=ISS-S2-003"
 )
 
+DEPLOYER_OFFICER_GRANTED=0
+DEPLOYER_OID=""
+DEPLOYER_VAULT_SCOPE=""
+
 # --- Helpers de nombrado (deterministas, iguales al resto de la infra) ----------
 
 compute_keyvault_name() {
@@ -121,11 +125,29 @@ create_vault() {
 
 # El deployer necesita 'Secrets Officer' para poder SET el secreto (vault RBAC).
 grant_deployer_officer() {
-  local vault_id="$1" oid
+  local vault_id="$1" oid existing
   oid="$(az ad signed-in-user show --query id -o tsv 2>/dev/null || echo "")"
   [ -n "$oid" ] || { log_warn "No se pudo resolver el usuario Entra actual; omito grant de Officer."; return 0; }
+  existing="$(az role assignment list --assignee "$oid" --scope "$vault_id" \
+    --role "$SECRETS_OFFICER_ROLE" --query 'length(@)' -o tsv 2>/dev/null || echo 0)"
+  if [ "${existing:-0}" -ge 1 ] 2>/dev/null; then
+    log_info "El deployer ya tenia '$SECRETS_OFFICER_ROLE'; no se revocara al final."
+    return 0
+  fi
   log_info "Otorgando '$SECRETS_OFFICER_ROLE' al deployer para poder cargar el secreto..."
   assign_role_scope "$oid" "User" "$SECRETS_OFFICER_ROLE" "$vault_id"
+  DEPLOYER_OFFICER_GRANTED=1
+  DEPLOYER_OID="$oid"
+  DEPLOYER_VAULT_SCOPE="$vault_id"
+}
+
+revoke_temporary_deployer_officer() {
+  [ "$DEPLOYER_OFFICER_GRANTED" -eq 1 ] || return 0
+  log_info "Revocando permiso temporal '$SECRETS_OFFICER_ROLE' del deployer..."
+  az role assignment delete --assignee "$DEPLOYER_OID" \
+    --role "$SECRETS_OFFICER_ROLE" --scope "$DEPLOYER_VAULT_SCOPE" >/dev/null 2>&1 || \
+    log_warn "No se pudo revocar automaticamente el permiso temporal; revisalo manualmente."
+  DEPLOYER_OFFICER_GRANTED=0
 }
 
 # Migra la connection string de Cosmos al vault. NUNCA imprime el valor.
@@ -243,10 +265,13 @@ main() {
   vault_id="$(az keyvault show --name "$vault" --resource-group "$RESOURCE_GROUP" --query id -o tsv)"
 
   grant_deployer_officer "$vault_id"
+  trap revoke_temporary_deployer_officer EXIT
   store_cosmos_secret    "$vault" "$RESOURCE_GROUP" "$cosmos"
   grant_app_identities   "$vault_id" "$RESOURCE_GROUP" "$app"
   wire_app_settings      "$vault" "$RESOURCE_GROUP" "$app"
   verify_all_resources   "$vault" "$RESOURCE_GROUP"
+  revoke_temporary_deployer_officer
+  trap - EXIT
 
   log_info "ISS-S2-003 OK: Key Vault '$vault' con secreto de Cosmos y acceso por Managed Identity."
 }
