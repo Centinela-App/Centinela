@@ -19,8 +19,9 @@
 #   scripts/assign-rbac.sh
 #     [--analyst-principal <objectId|UPN>]  -> Reader (RG) para el Analista demo
 #     [--auditor-principal <objectId|UPN>]  -> Reader (RG) para el Auditor demo
-#     [--queue-test-principal <objectId>]   -> rol Queue TEMPORAL (cuenta Storage)
-#     [--revoke-queue-test <objectId>]      -> revoca el rol Queue temporal y sale
+#     [--queue-test-principal <objectId>]   -> roles Queue TEMPORALES (cuenta Storage)
+#     [--queue-test-principal-type <tipo>]  -> User o ServicePrincipal
+#     [--revoke-queue-test <objectId>]      -> revoca ambos roles Queue y sale
 #
 # Variables (ver scripts/lib/parameters.sh):
 #   SUBSCRIPTION_ID, LOCATION, RESOURCE_GROUP, NAME_PREFIX, APP_SERVICE_SKU
@@ -40,7 +41,10 @@ readonly SLOT_NAME="staging"
 readonly BLOB_DATA_ROLE="Storage Blob Data Contributor"   # datos, NO administracion
 readonly KV_SECRETS_USER_ROLE="Key Vault Secrets User"    # ISS-S2-003: lectura de secretos
 readonly READER_ROLE="Reader"
-readonly QUEUE_TEST_ROLE="Storage Queue Data Message Processor"  # minimo para roundtrip
+readonly QUEUE_TEST_ROLES=(
+  "Storage Queue Data Message Sender"
+  "Storage Queue Data Message Processor"
+) # combinacion minima para enviar, recibir y eliminar el mensaje tecnico
 readonly PROD_CONTAINERS=("raw-transactions-production" "verification-documents-production")
 readonly STAGING_CONTAINERS=("raw-transactions-staging" "verification-documents-staging")
 # Roles de administracion prohibidos por la regla dura de minimo privilegio.
@@ -49,6 +53,7 @@ readonly FORBIDDEN_ROLES=("Owner" "Contributor" "User Access Administrator")
 ANALYST_PRINCIPAL="${ANALYST_PRINCIPAL_ID:-}"
 AUDITOR_PRINCIPAL="${AUDITOR_PRINCIPAL_ID:-}"
 QUEUE_TEST_PRINCIPAL=""
+QUEUE_TEST_PRINCIPAL_TYPE="${QUEUE_TEST_PRINCIPAL_TYPE:-ServicePrincipal}"
 REVOKE_QUEUE_TEST=""
 
 while [ "$#" -gt 0 ]; do
@@ -56,9 +61,10 @@ while [ "$#" -gt 0 ]; do
     --analyst-principal)    ANALYST_PRINCIPAL="${2:?}"; shift 2 ;;
     --auditor-principal)    AUDITOR_PRINCIPAL="${2:?}"; shift 2 ;;
     --queue-test-principal) QUEUE_TEST_PRINCIPAL="${2:?}"; shift 2 ;;
+    --queue-test-principal-type) QUEUE_TEST_PRINCIPAL_TYPE="${2:?}"; shift 2 ;;
     --revoke-queue-test)    REVOKE_QUEUE_TEST="${2:?}"; shift 2 ;;
     -h|--help)
-      echo "Uso: $0 [--analyst-principal ID] [--auditor-principal ID] [--queue-test-principal ID] [--revoke-queue-test ID]"; exit 0 ;;
+      echo "Uso: $0 [--analyst-principal ID] [--auditor-principal ID] [--queue-test-principal ID] [--queue-test-principal-type User|ServicePrincipal] [--revoke-queue-test ID]"; exit 0 ;;
     *) die "Argumento desconocido: $1" ;;
   esac
 done
@@ -113,11 +119,18 @@ assign_role_scope() {
 # --- Revocacion de la prueba de cola (sale al terminar) ------------------------
 
 revoke_queue_test() {
-  local principal="$1" sa_id="$2"
-  log_warn "Revocando rol de prueba de cola '$QUEUE_TEST_ROLE' para $(mask "$principal")..."
-  with_retry 3 az role assignment delete \
-    --assignee "$principal" --role "$QUEUE_TEST_ROLE" --scope "$sa_id" >/dev/null 2>&1 || true
-  log_info "Revocacion solicitada. Verifica con: az role assignment list --assignee <id> --scope <sa>"
+  local principal="$1" sa_id="$2" role remaining
+  for role in "${QUEUE_TEST_ROLES[@]}"; do
+    log_warn "Revocando rol temporal '$role' para $(mask "$principal")..."
+    az role assignment delete \
+      --assignee "$principal" --role "$role" --scope "$sa_id" >/dev/null 2>&1 || true
+  done
+
+  remaining="$(az role assignment list --assignee "$principal" --scope "$sa_id" \
+    --query "[?roleDefinitionName=='Storage Queue Data Message Sender' || roleDefinitionName=='Storage Queue Data Message Processor'] | length(@)" \
+    -o tsv 2>/dev/null || echo 0)"
+  [ "${remaining:-0}" = "0" ] || die "La revocacion temporal de Queue no quedo completa."
+  log_info "Roles temporales de Queue revocados y verificados."
 }
 
 # --- Main ----------------------------------------------------------------------
@@ -205,14 +218,24 @@ main() {
 
   # 3) Prueba de cola: asignacion TEMPORAL minima, registrada para revocacion.
   if [ -n "$QUEUE_TEST_PRINCIPAL" ]; then
-    log_warn "Asignando rol de cola TEMPORAL '$QUEUE_TEST_ROLE' para la prueba (ISS-S1-010)..."
-    assign_role_scope "$QUEUE_TEST_PRINCIPAL" "ServicePrincipal" "$QUEUE_TEST_ROLE" "$sa_id"
+    case "$QUEUE_TEST_PRINCIPAL_TYPE" in
+      User|ServicePrincipal) ;;
+      *) die "QUEUE_TEST_PRINCIPAL_TYPE debe ser User o ServicePrincipal." ;;
+    esac
+
+    local queue_role
+    for queue_role in "${QUEUE_TEST_ROLES[@]}"; do
+      log_warn "Asignando rol temporal '$queue_role' para la prueba ISS-S1-010..."
+      assign_role_scope "$QUEUE_TEST_PRINCIPAL" "$QUEUE_TEST_PRINCIPAL_TYPE" "$queue_role" "$sa_id"
+    done
+
     local record="$SCRIPT_DIR/../docs/evidence/identity/temp-queue-assignment.record.txt"
     if [ -d "$(dirname "$record")" ]; then
       {
         printf 'TEMPORAL - REVOCAR AL TERMINAR LA PRUEBA DE COLA (ISS-S1-010)\n'
         printf 'principalId=%s\n' "$QUEUE_TEST_PRINCIPAL"
-        printf 'role=%s\n' "$QUEUE_TEST_ROLE"
+        printf 'principalType=%s\n' "$QUEUE_TEST_PRINCIPAL_TYPE"
+        printf 'roles=Storage Queue Data Message Sender; Storage Queue Data Message Processor\n'
         printf 'scope=%s\n' "$sa_id"
         printf 'revocar_con=scripts/assign-rbac.sh --revoke-queue-test %s\n' "$QUEUE_TEST_PRINCIPAL"
       } > "$record"

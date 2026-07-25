@@ -1,237 +1,171 @@
 #!/usr/bin/env bash
-# test-clean-deploy.sh — TEST-S1-026: Desplegar desde suscripcion o Resource Group limpio
-# Demuestra que el entorno se reconstruye sin pasos manuales.
-#
-# Uso: ./scripts/tests/test-clean-deploy.sh
+# TEST-S1-026: desplegar Semana 1 desde un Resource Group inexistente.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# shellcheck source=../lib/common.sh
 source "$SCRIPT_DIR/../lib/common.sh"
+# shellcheck source=../lib/parameters.sh
 source "$SCRIPT_DIR/../lib/parameters.sh"
 
-# -----------------------------------------------------------------------------
-# Configuracion
-# -----------------------------------------------------------------------------
-EVIDENCE_DIR="${SCRIPT_DIR}/../../docs/evidence/final"
-RUN_ID="run-$(date -u +%Y%m%dT%H%M%SZ)-$(openssl rand -hex 4 2>/dev/null || echo $RANDOM)"
-EVIDENCE_RUN_DIR="${EVIDENCE_DIR}/${RUN_ID}"
+REPLACE_EXISTING=0
+CONFIRM_RESOURCE_GROUP=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --replace-existing) REPLACE_EXISTING=1; shift ;;
+    --confirm-resource-group) CONFIRM_RESOURCE_GROUP="${2:?Falta RG}"; shift 2 ;;
+    -h|--help)
+      echo "Uso: $0 [--replace-existing --confirm-resource-group <RG>]"
+      exit 0
+      ;;
+    *) die "Argumento desconocido: $1" ;;
+  esac
+done
 
-# -----------------------------------------------------------------------------
-# Funciones
-# -----------------------------------------------------------------------------
+RUN_ID="run-clean-$(date -u +%Y%m%dT%H%M%SZ)-$RANDOM"
+EVIDENCE_DIR="$SCRIPT_DIR/../../docs/evidence/final/$RUN_ID"
+RESULT="FAILED"
 
-# setup_evidence: Crea directorio de evidencia
-setup_evidence() {
-  mkdir -p "$EVIDENCE_RUN_DIR"
-  log_info "Directorio de evidencia: $EVIDENCE_RUN_DIR"
-  
-  # Metadata del run
-  cat > "${EVIDENCE_RUN_DIR}/metadata.json" <<JSON
-{
-  "runId": "$RUN_ID",
-  "testId": "TEST-S1-026",
-  "feature": "FEAT-S1-001",
-  "historyId": "HU-S1-001",
-  "startTime": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "commit": "$(git rev-parse HEAD 2>/dev/null || echo "N/A")",
-  "branch": "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "N/A")"
-}
-JSON
+webapp_name() {
+  local hash
+  hash="$(printf '%s|%s|%s' "$NAME_PREFIX" "$SUBSCRIPTION_ID" "$RESOURCE_GROUP" | sha1sum | cut -c1-6)"
+  printf '%s-app-%s' "$NAME_PREFIX" "$hash"
 }
 
-# check_prerequisites: Verifica precondiciones
-check_prerequisites() {
-  log_info "Verificando precondiciones..."
-  
-  require_cmd az
-  require_cmd jq
-  
-  # Verificar sesion de Azure
-  az account show >/dev/null 2>&1 \
-    || die "No hay sesion Azure activa. Ejecuta az login."
-  
-  log_info "  [OK] Azure CLI autenticado"
-  
-  # Cargar parametros
-  load_parameters
-  validate_parameters
-  
-  log_info "  [OK] Parametros validados"
-  echo "SUBSCRIPTION_ID=$SUBSCRIPTION_ID" >> "${EVIDENCE_RUN_DIR}/params.env"
-  echo "RESOURCE_GROUP=$RESOURCE_GROUP" >> "${EVIDENCE_RUN_DIR}/params.env"
-  echo "LOCATION=$LOCATION" >> "${EVIDENCE_RUN_DIR}/params.env"
-}
-
-# check_rg_not_exists: Verifica que el RG no existe (entorno limpio)
-check_rg_not_exists() {
-  log_info "Verificando que Resource Group '$RESOURCE_GROUP' no existe..."
-  
-  if az group show --name "$RESOURCE_GROUP" >/dev/null 2>&1; then
-    log_warn "Resource Group '$RESOURCE_GROUP' YA existe."
-    read -p "Desea eliminarlo y continuar? [y/N] " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-      die "Prueba cancelada: RG existente"
+wait_for_health() {
+  local url="https://$(webapp_name).azurewebsites.net/actuator/health"
+  local attempts="${HEALTH_MAX_ATTEMPTS:-30}" status
+  for attempt in $(seq 1 "$attempts"); do
+    if ! status="$(curl --silent --output "$EVIDENCE_DIR/health-response.json" --write-out '%{http_code}' --max-time 15 "$url")"; then
+      status="000"
     fi
-    log_info "Eliminando RG existente..."
-    bash "$SCRIPT_DIR/../destroy-week1.sh" --yes 2>&1 | tee "${EVIDENCE_RUN_DIR}/pre-cleanup.log"
-  else
-    log_info "  [OK] Resource Group no existe (entorno limpio)"
-  fi
+    [ "$status" = "200" ] && return 0
+    sleep 10
+  done
+  die "La aplicacion no alcanzo estado saludable en $url."
 }
 
-# execute_deploy: Ejecuta el despliegue
-execute_deploy() {
-  log_info "Ejecutando deploy-week1.sh..."
-  
-  # Registrar inicio
-  local deploy_start
-  deploy_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  
-  # Ejecutar despliegue
-  if bash "$SCRIPT_DIR/../deploy-week1.sh" 2>&1 | tee "${EVIDENCE_RUN_DIR}/deployment.log"; then
-    log_info "  [OK] Despliegue completado exitosamente"
-  else
-    log_error "Despliegue fallido"
-    cat "${EVIDENCE_RUN_DIR}/deployment.log" >> "${EVIDENCE_RUN_DIR}/FAILED.log"
-    return 1
-  fi
-  
-  local deploy_end
-  deploy_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  
-  # Actualizar metadata
-  jq ".deployStartTime = \"$deploy_start\" | .deployEndTime = \"$deploy_end\"" \
-    "${EVIDENCE_RUN_DIR}/metadata.json" > "${EVIDENCE_RUN_DIR}/metadata.tmp" \
-    && mv "${EVIDENCE_RUN_DIR}/metadata.tmp" "${EVIDENCE_RUN_DIR}/metadata.json"
+
+run_resource_validations() {
+  local validators=(
+    validate-storage.sh
+    validate-app-service.sh
+    validate-network.sh
+    validate-entra-roles.sh
+    validate-rbac.sh
+    validate-managed-identity.sh
+    validate-documentation.sh
+    validate-week1-scope.sh
+  )
+  local validator
+  for validator in "${validators[@]}"; do
+    "$SCRIPT_DIR/$validator" > "$EVIDENCE_DIR/${validator%.sh}.log" 2>&1
+  done
 }
 
-# execute_validations: Ejecuta las validaciones
-execute_validations() {
-  log_info "Ejecutando validaciones..."
-  
-  local validation_start
-  validation_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  
-  # Validate-week1
-  log_info "  Ejecutando validate-week1.sh..."
-  if bash "$SCRIPT_DIR/../validate-week1.sh" > "${EVIDENCE_RUN_DIR}/validate-week1.log" 2>&1; then
-    log_info "    [OK] validate-week1.sh"
-  else
-    log_warn "    [WARN] validate-week1.sh reporto advertencias"
-  fi
-  
-  # Maven verify
-  log_info "  Ejecutando mvn clean verify..."
-  if mvn clean verify > "${EVIDENCE_RUN_DIR}/maven-verify.log" 2>&1; then
-    log_info "    [OK] mvn clean verify"
-  else
-    log_warn "    [WARN] mvn clean verify reporto problemas"
-  fi
-  
-  # Inventory de recursos
-  log_info "  Generando inventario de recursos..."
-  az resource list \
-    --resource-group "$RESOURCE_GROUP" \
-    --query "[*].{name:name,type:type,location:location}" \
-    --output json > "${EVIDENCE_RUN_DIR}/resource-inventory.json" 2>&1
-  
-  local validation_end
-  validation_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  
-  jq ".validationStartTime = \"$validation_start\" | .validationEndTime = \"$validation_end\"" \
-    "${EVIDENCE_RUN_DIR}/metadata.json" > "${EVIDENCE_RUN_DIR}/metadata.tmp" \
-    && mv "${EVIDENCE_RUN_DIR}/metadata.tmp" "${EVIDENCE_RUN_DIR}/metadata.json"
+write_metadata() {
+  jq -n \
+    --arg runId "$RUN_ID" \
+    --arg testId "TEST-S1-026" \
+    --arg startTime "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg commit "$(git rev-parse HEAD 2>/dev/null || echo N/A)" \
+    --arg branch "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo N/A)" \
+    '{runId:$runId,testId:$testId,startTime:$startTime,commit:$commit,branch:$branch}' \
+    > "$EVIDENCE_DIR/metadata.json"
 }
 
-# generate_summary: Genera resumen de la prueba
-generate_summary() {
-  log_info "Generando resumen..."
-  
-  local resource_count=0
-  if [ -f "${EVIDENCE_RUN_DIR}/resource-inventory.json" ]; then
-    resource_count=$(jq 'length' "${EVIDENCE_RUN_DIR}/resource-inventory.json" 2>/dev/null || echo "0")
-  fi
-  
-  cat > "${EVIDENCE_RUN_DIR}/validation-summary.md" <<EOF
-# Resumen de Validacion - TEST-S1-026
+write_summary() {
+  local result="$1" detail="$2"
+  cat > "$EVIDENCE_DIR/validation-summary.md" <<SUMMARY
+# Resumen TEST-S1-026
 
-## Informacion del Run
+- **Run ID:** $RUN_ID
+- **Resultado:** $result
+- **Commit:** $(git rev-parse HEAD 2>/dev/null || echo N/A)
+- **Resource Group:** $RESOURCE_GROUP
+- **Fecha UTC:** $(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-- **Run ID**: ${RUN_ID}
-- **Commit**: $(git rev-parse HEAD 2>/dev/null || echo "N/A")
-- **Branch**: $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "N/A")
-- **Fecha**: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+## Detalle
 
-## Parametros
+$detail
 
-- Subscription: \`$(mask "$SUBSCRIPTION_ID")\`
-- Resource Group: \`${RESOURCE_GROUP}\`
-- Location: \`${LOCATION}\`
+## Evidencias
 
-## Resultados
+- `deployment.log`
+- `validate-week1.log`
+- `maven-verify.log`
+- `application-deploy.log`
+- `health-response.json`
+- `resource-inventory.json`
+SUMMARY
 
-### Recursos Desplegados
-
-- **Total de recursos**: ${resource_count}
-- Ver: [resource-inventory.json](./resource-inventory.json)
-
-### Despliegue
-
-- **Status**: $([ -f "${EVIDENCE_RUN_DIR}/FAILED.log" ] && echo "FALLIDO" || echo "EXITOSO")
-- **Log**: [deployment.log](./deployment.log)
-
-### Validaciones
-
-- **Maven**: $(grep -q "BUILD SUCCESS" "${EVIDENCE_RUN_DIR}/maven-verify.log" 2>/dev/null && echo "PASSED" || echo "WITH WARNINGS")
-- **Week1 Validate**: $(grep -q "validado" "${EVIDENCE_RUN_DIR}/validate-week1.log" 2>/dev/null && echo "PASSED" || echo "WITH WARNINGS")
-
-## Conclusion
-
-TEST-S1-026: $([ -f "${EVIDENCE_RUN_DIR}/FAILED.log" ] && echo "FALLIDO" || echo "PASADO")
-
-El entorno se reconstruyo exitosamente desde un estado limpio.
-EOF
-  
-  # Actualizar metadata final
-  jq ".endTime = \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" | .result = \"$( [ -f "${EVIDENCE_RUN_DIR}/FAILED.log" ] && echo "FAILED" || echo "PASSED" )\"" \
-    "${EVIDENCE_RUN_DIR}/metadata.json" > "${EVIDENCE_RUN_DIR}/metadata.tmp" \
-    && mv "${EVIDENCE_RUN_DIR}/metadata.tmp" "${EVIDENCE_RUN_DIR}/metadata.json"
+  jq \
+    --arg endTime "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg result "$result" \
+    '. + {endTime:$endTime,result:$result}' \
+    "$EVIDENCE_DIR/metadata.json" > "$EVIDENCE_DIR/metadata.tmp"
+  mv "$EVIDENCE_DIR/metadata.tmp" "$EVIDENCE_DIR/metadata.json"
 }
 
-# -----------------------------------------------------------------------------
-# Main
-# -----------------------------------------------------------------------------
+on_exit() {
+  local rc=$?
+  trap - EXIT
+  if [ "$rc" -ne 0 ] && [ ! -f "$EVIDENCE_DIR/validation-summary.md" ]; then
+    write_summary "FAILED" "La prueba termino antes de completar todas las validaciones."
+  fi
+  exit "$rc"
+}
 
 main() {
-  log_info "========================================"
-  log_info "  TEST-S1-026: Clean Deploy"
-  log_info "========================================"
-  
-  setup_evidence
-  check_prerequisites
-  check_rg_not_exists
-  execute_deploy
-  execute_validations
-  generate_summary
-  
-  log_info "========================================"
-  log_info "Comandos ejecutados:"
-  log_info "  cd $(pwd)"
-  log_info "  bash scripts/deploy-week1.sh"
-  log_info "  bash scripts/validate-week1.sh"
-  log_info "  mvn clean verify"
-  log_info ""
-  log_info "Evidencia guardada en:"
-  log_info "  $EVIDENCE_RUN_DIR"
-  log_info "========================================"
-  
-  if [ -f "${EVIDENCE_RUN_DIR}/FAILED.log" ]; then
-    log_error "PRUEBA FALLIDA"
-    exit 1
+  require_cmd az
+  require_cmd jq
+  require_cmd mvn
+  require_cmd curl
+  require_cmd sha1sum
+
+  load_parameters
+  validate_parameters
+  az account show >/dev/null 2>&1 || die "No hay sesion Azure activa. Ejecuta az login."
+
+  local active_sub
+  active_sub="$(az account show --query id -o tsv)"
+  [ "$active_sub" = "$SUBSCRIPTION_ID" ] \
+    || die "Suscripcion activa ($(mask "$active_sub")) != SUBSCRIPTION_ID ($(mask "$SUBSCRIPTION_ID"))."
+
+  mkdir -p "$EVIDENCE_DIR"
+  write_metadata
+  trap on_exit EXIT
+
+  if [ "$(az group exists --name "$RESOURCE_GROUP" -o tsv)" = "true" ]; then
+    [ "$REPLACE_EXISTING" -eq 1 ] \
+      || die "El Resource Group '$RESOURCE_GROUP' ya existe. Usa --replace-existing para eliminarlo de forma controlada."
+    [ "$CONFIRM_RESOURCE_GROUP" = "$RESOURCE_GROUP" ] \
+      || die "Proteccion destructiva: agrega --confirm-resource-group '$RESOURCE_GROUP'."
+    "$SCRIPT_DIR/../destroy-week1.sh" --yes --wait 2>&1 | tee "$EVIDENCE_DIR/pre-cleanup.log"
   fi
-  
-  log_info "PRUEBA COMPLETADA"
+
+  [ "$(az group exists --name "$RESOURCE_GROUP" -o tsv)" = "false" ] \
+    || die "El Resource Group debe estar ausente antes del despliegue."
+
+  "$SCRIPT_DIR/../deploy-week1.sh" 2>&1 | tee "$EVIDENCE_DIR/deployment.log"
+  (cd "$REPO_ROOT" && mvn clean verify) > "$EVIDENCE_DIR/maven-verify.log" 2>&1
+  "$SCRIPT_DIR/../deploy-application.sh" --swap 2>&1 | tee "$EVIDENCE_DIR/application-deploy.log"
+  wait_for_health
+  "$SCRIPT_DIR/../validate-week1.sh" > "$EVIDENCE_DIR/validate-week1.log" 2>&1
+  run_resource_validations
+
+  az resource list \
+    --resource-group "$RESOURCE_GROUP" \
+    --query '[].{name:name,type:type,location:location}' \
+    -o json > "$EVIDENCE_DIR/resource-inventory.json"
+
+  [ "$(jq 'length' "$EVIDENCE_DIR/resource-inventory.json")" -gt 0 ] \
+    || die "El despliegue termino sin recursos inventariados."
+
+  RESULT="PASSED"
+  write_summary "$RESULT" "El entorno se creo desde cero; validate-week1 y mvn clean verify terminaron con codigo 0."
+  log_info "TEST-S1-026 PASSED. Evidencia: $EVIDENCE_DIR"
 }
 
 main "$@"

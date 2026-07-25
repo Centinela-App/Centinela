@@ -18,6 +18,7 @@ INTERVAL=0.5          # Intervalo base entre solicitudes (segundos)
 MAX_RANDOM_DELAY=0.3  # Variabilidad aleatoria maxima (segundos)
 OUTPUT_FILE=""         # Archivo de salida para logs
 LOAD_LOG_FILE=""       # Archivo CSV para resultados
+TMP_DIR=""
 
 # -----------------------------------------------------------------------------
 # Variables de la API
@@ -127,15 +128,17 @@ send_request() {
   local transaction_id="$1"
   local payload="$2"
   local response_file="$3"
-  local status_file="$4"
   
   local start_time
   start_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   
   local http_status
   local error_msg=""
-  
-  # Enviar la solicitud
+  local curl_error_file="${response_file}.curl-error"
+  rm -f "$response_file"
+  : > "$curl_error_file"
+
+  # Separar el codigo HTTP del error de transporte. Nunca se guarda el token.
   if http_status="$(curl --silent --show-error \
     --output "$response_file" \
     --write-out '%{http_code}' \
@@ -144,12 +147,11 @@ send_request() {
     --header 'Content-Type: application/json' \
     --data-binary "$payload" \
     --max-time 30 \
-    "${CENTINELA_API_BASE_URL%/}/api/v1/transactions" 2>&1)"; then
-    # La solicitud se completo
+    "${CENTINELA_API_BASE_URL%/}/api/v1/transactions" 2>"$curl_error_file")"; then
     :
   else
+    error_msg="$(tr '\n,' ';;' < "$curl_error_file")"
     http_status="000"
-    error_msg="$http_status"
   fi
   
   local end_time
@@ -176,7 +178,10 @@ main() {
   
   require_cmd curl
   require_cmd jq
+  require_cmd awk
   
+  mkdir -p "$(dirname "$OUTPUT_FILE")" "$(dirname "$LOAD_LOG_FILE")"
+
   log_info "========================================"
   log_info "  Generador de Carga HA"
   log_info "========================================"
@@ -189,14 +194,13 @@ main() {
   echo "transactionId,httpStatus,startTime,endTime,hasResponse,errorMsg" > "$LOAD_LOG_FILE"
   
   # Archivos temporales
-  local tmp_dir
-  tmp_dir="$(mktemp -d)"
-  local payload_file="${tmp_dir}/payload.json"
-  local response_file="${tmp_dir}/response.json"
+  TMP_DIR="$(mktemp -d)"
+  local payload_file="${TMP_DIR}/payload.json"
+  local response_file="${TMP_DIR}/response.json"
   
   # Cleanup
   cleanup_load() {
-    rm -rf "$tmp_dir" 2>/dev/null || true
+    rm -rf "$TMP_DIR" 2>/dev/null || true
   }
   trap cleanup_load EXIT
   
@@ -224,7 +228,7 @@ main() {
     generate_transaction_payload "$transaction_id" > "$payload_file"
     
     # Enviar solicitud
-    send_request "$transaction_id" "$(cat "$payload_file")" "$response_file" "$LOAD_LOG_FILE"
+    send_request "$transaction_id" "$(cat "$payload_file")" "$response_file"
     
     request_count=$((request_count + 1))
     
@@ -235,12 +239,8 @@ main() {
     
     # Esperar intervalo + variabilidad
     local wait_time
-    wait_time="$(echo "$INTERVAL + $(awk -v max="$MAX_RANDOM_DELAY" 'BEGIN{srand(); print rand()*max}')" | bc -l 2>/dev/null || echo "$INTERVAL")"
-    
-    # Evitar espera innecesaria si ya terminamos
-    if [ $((current_time + $(echo "$wait_time" | tr -d '.'))) -lt $((start_time + DURATION)) ]; then
-      sleep "$wait_time" 2>/dev/null || sleep 1
-    fi
+    wait_time="$(awk -v base="$INTERVAL" -v max="$MAX_RANDOM_DELAY" 'BEGIN{srand(); printf "%.3f", base + rand() * max}')"
+    sleep "$wait_time"
   done
   
   log_info "========================================"

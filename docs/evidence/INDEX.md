@@ -23,9 +23,9 @@ queda documentada como pendiente. No se fabrica evidencia de Azure (regla del Do
 | ISS-S1-001 | Preparar repositorio Java y estructura hexagonal | ✅ local | `iss-s1-001/` |
 | ISS-S1-002 | Scripts base de infraestructura y control de costos | ✅ local + Azure | `iss-s1-002/` |
 | ISS-S1-003 | Storage, contenedores y colas por ambiente | ✅ local + Azure | `iss-s1-003/` |
-| ISS-S1-004 | App Service, Managed Identity y slot staging | ✅ local + Azure | `iss-s1-004/` |
-| ISS-S1-005 | VNet, subredes, DNS y Private Endpoints | ✅ local + Azure | `iss-s1-005/` |
-| ISS-S1-006 | Entra ID, roles y RBAC mínimo | ✅ local + Azure | `iss-s1-006/` |
+| ISS-S1-004 | App Service, Managed Identity y slot staging | 🟡 scripts + salida esperada; cierre Azure pendiente | `iss-s1-004/` |
+| ISS-S1-005 | VNet, subredes, DNS y Private Endpoints | 🟡 scripts + salida esperada; cierre Azure pendiente | `iss-s1-005/` |
+| ISS-S1-006 | Entra ID, roles y RBAC mínimo | 🟡 scripts + salida esperada; cierre Azure pendiente | `iss-s1-006/` |
 | ISS-S1-007 | Contrato de transacción (OpenAPI, DTO, mapper) | ✅ local | `iss-s1-007/` |
 | ISS-S1-008 | Persistir transacción cruda en Blob | ✅ local (IT MockMvc) | `iss-s1-008/` |
 | ISS-S1-009 | Carga técnica de documentos | ✅ local (IT MockMvc) | `iss-s1-009/` |
@@ -56,15 +56,18 @@ queda documentada como pendiente. No se fabrica evidencia de Azure (regla del Do
 ### ISS-S1-004 — App Service, Managed Identity y slot staging
 - `iss-s1-004/01-syntax-and-arm-render.txt`, `02-sku-validation.txt` — validación previa.
 - `iss-s1-004/03-provision-app-service.txt`, `04-validate-app-service.txt`,
-  `06-deploy-application.txt` — provisionamiento y despliegue.
+  `06-deploy-application.txt` — salidas esperadas; la comprobación Azure real se captura
+  en la corrida final.
 
 ### ISS-S1-005 — Red privada y DNS
 - `iss-s1-005/02-provision-network.txt`, `03-configure-private-endpoints.txt`,
-  `04-validate-network.txt` — VNet, Private Endpoints y resolución privada.
+  `04-validate-network.txt` — salidas esperadas; la resolución privada real se comprueba
+  durante el cierre desde un ejecutor conectado a la VNet.
 
 ### ISS-S1-006 — Entra ID y RBAC
 - `iss-s1-006/01-syntax-and-approles.txt`, `02-provision-entra-app.txt`,
-  `03-assign-rbac.txt`, `04-validate-rbac.txt` — app roles, RBAC mínimo y validación.
+  `03-assign-rbac.txt`, `04-validate-rbac.txt` — validación estática y salidas esperadas;
+  Entra, settings OAuth2 y RBAC reales se comprueban en la corrida final.
 
 ### ISS-S1-007 — Contrato de transacción
 - `iss-s1-007/01-required-tests.txt`, `02-full-test-suite.txt`, `03-openapi-lint.txt` —
@@ -82,21 +85,24 @@ queda documentada como pendiente. No se fabrica evidencia de Azure (regla del Do
 - `iss-s1-009/examples/` — `201-response.json`, `400-response.json`, documento de ejemplo.
 
 ### ISS-S1-010 — Roundtrip de Queue *(scripts OK · run Azure pendiente)*
-- `iss-s1-010/01-syntax-check.txt`, `iss-s1-010/README.md`.
+- `iss-s1-010/01-syntax-check.txt`, `iss-s1-010/README.md`; la corrida real genera
+  `queue/run-*/`.
 
 ### ISS-S1-011 — Seguridad de endpoints
 - `iss-s1-011/01-endpoint-authorization-test.txt` — mapeo de roles (7/7).
 - `iss-s1-011/02-full-verify-suite.txt` — IT MockMvc `401`/`403`/`202`/`201`. Ver README.
 
 ### ISS-S1-012 — Alta disponibilidad *(scripts OK · run Azure pendiente)*
-- `iss-s1-012/01-syntax-check.txt`, `iss-s1-012/README.md`.
+- `iss-s1-012/01-syntax-check.txt`, `iss-s1-012/README.md`; la corrida real genera
+  `ha/run-*/`.
 
 ### ISS-S1-013 — Documentación y trazabilidad
 - `iss-s1-013/01-validate-documentation.txt`, `02-validate-week1-scope.txt`,
   `03-scan-repository.txt`, `04-full-verify-suite.txt`. Ver README.
 
 ### ISS-S1-014 — Cierre final *(scripts OK · run Azure pendiente)*
-- `final/01-syntax-check.txt`, `final/README.md`.
+- `final/01-syntax-check.txt`, `final/README.md`; el cierre estricto genera
+  `final/run-drc-*/`.
 
 ---
 
