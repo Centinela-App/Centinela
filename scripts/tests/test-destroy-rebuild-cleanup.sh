@@ -1,373 +1,388 @@
 #!/usr/bin/env bash
-# test-destroy-rebuild-cleanup.sh — TEST-S1-027: Destruir, reconstruir, validar y limpiar
-# Demuestra destruccion segura, reconstruccion completa y limpieza final.
-#
-# Uso: ./scripts/tests/test-destroy-rebuild-cleanup.sh [--skip-destroy] [--keep-resources]
+# TEST-S1-026/027: destruir, reconstruir, validar Queue/HA y limpiar Semana 1.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# shellcheck source=../lib/common.sh
 source "$SCRIPT_DIR/../lib/common.sh"
+# shellcheck source=../lib/parameters.sh
 source "$SCRIPT_DIR/../lib/parameters.sh"
 
-# -----------------------------------------------------------------------------
-# Configuracion
-# -----------------------------------------------------------------------------
-EVIDENCE_DIR="${SCRIPT_DIR}/../../docs/evidence/final"
-RUN_ID="run-drc-$(date -u +%Y%m%dT%H%M%SZ)-$(openssl rand -hex 4 2>/dev/null || echo $RANDOM)"
-EVIDENCE_RUN_DIR="${EVIDENCE_DIR}/${RUN_ID}"
+KEEP_RESOURCES=0
+KEEP_ENTRA_FINAL=0
+SKIP_TEST_RBAC=0
+TEST_PRINCIPAL_ID="${WEEK1_TEST_PRINCIPAL_ID:-}"
+TEST_PRINCIPAL_TYPE="${WEEK1_TEST_PRINCIPAL_TYPE:-User}"
+RBAC_PROPAGATION_SECONDS="${RBAC_PROPAGATION_SECONDS:-60}"
+CONFIRM_RESOURCE_GROUP=""
+SERVICE_TOKEN_COMMAND="${CENTINELA_SERVICE_TOKEN_COMMAND:-}"
 
-SKIP_DESTROY=0    # Para re-ejecutar sin destruir primero
-KEEP_RESOURCES=0  # Mantener recursos al final (requiere excepcion)
+usage() {
+  cat <<USAGE
+Uso: $0 [opciones]
 
-# Parsear argumentos
-for arg in "$@"; do
-  case "$arg" in
-    --skip-destroy) SKIP_DESTROY=1 ;;
-    --keep-resources) KEEP_RESOURCES=1 ;;
-    -h|--help)
-      echo "Uso: $0 [--skip-destroy] [--keep-resources]"
-      echo "  --skip-destroy: Omite la destruccion inicial (para re-ejecutar)"
-      echo "  --keep-resources: Mantiene recursos al final (requiere excepcion)"
-      exit 0
-      ;;
+  --keep-resources             Conserva recursos con excepcion documentada.
+  --keep-entra-final           Elimina el RG pero conserva la App Registration al final.
+  --skip-test-rbac             No crea roles temporales para Queue/Blob.
+  --test-principal ID          Object ID de la identidad que ejecuta las pruebas.
+  --test-principal-type TIPO   User o ServicePrincipal (default: User).
+  --confirm-resource-group RG   Debe coincidir exactamente con RESOURCE_GROUP.
+  --service-token-command CMD   Comando que imprime un token SERVICE despues del deploy.
+USAGE
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --keep-resources) KEEP_RESOURCES=1; shift ;;
+    --keep-entra-final) KEEP_ENTRA_FINAL=1; shift ;;
+    --skip-test-rbac) SKIP_TEST_RBAC=1; shift ;;
+    --test-principal) TEST_PRINCIPAL_ID="${2:?Falta ID}"; shift 2 ;;
+    --test-principal-type) TEST_PRINCIPAL_TYPE="${2:?Falta tipo}"; shift 2 ;;
+    --confirm-resource-group) CONFIRM_RESOURCE_GROUP="${2:?Falta RG}"; shift 2 ;;
+    --service-token-command) SERVICE_TOKEN_COMMAND="${2:?Falta comando}"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) die "Argumento desconocido: $1" ;;
   esac
 done
 
-# -----------------------------------------------------------------------------
-# Funciones
-# -----------------------------------------------------------------------------
+RUN_ID="run-drc-$(date -u +%Y%m%dT%H%M%SZ)-$RANDOM"
+EVIDENCE_DIR="$SCRIPT_DIR/../../docs/evidence/final/$RUN_ID"
+CREATED_RBAC_FILE=""
+START_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+TEST_RBAC_MANAGED=0
+FINAL_CLEANUP_DONE=0
+FINAL_RESULT="FAILED"
 
-# setup_evidence: Crea directorio de evidencia
-setup_evidence() {
-  mkdir -p "$EVIDENCE_RUN_DIR"
-  log_info "Directorio de evidencia: $EVIDENCE_RUN_DIR"
-  
-  cat > "${EVIDENCE_RUN_DIR}/metadata.json" <<JSON
-{
-  "runId": "$RUN_ID",
-  "testId": "TEST-S1-027",
-  "feature": "FEAT-S1-001",
-  "historyId": "HU-S1-001",
-  "startTime": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "commit": "$(git rev-parse HEAD 2>/dev/null || echo "N/A")",
-  "branch": "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "N/A")",
-  "skipDestroy": $SKIP_DESTROY,
-  "keepResources": $KEEP_RESOURCES
-}
-JSON
+QUEUE_ROLES=(
+  "Storage Queue Data Message Sender"
+  "Storage Queue Data Message Processor"
+)
+BLOB_TEST_ROLE="Storage Blob Data Contributor"
+
+compute_hash() {
+  printf '%s|%s|%s' "$NAME_PREFIX" "$SUBSCRIPTION_ID" "$RESOURCE_GROUP" | sha1sum | cut -c1-6
 }
 
-# load_and_validate_params: Carga y valida parametros
-load_and_validate_params() {
-  load_parameters
-  validate_parameters
-  
-  log_info "Parametros validados:"
-  log_info "  RESOURCE_GROUP: $RESOURCE_GROUP"
-  log_info "  LOCATION: $LOCATION"
-  
-  echo "SUBSCRIPTION_ID=$SUBSCRIPTION_ID" >> "${EVIDENCE_RUN_DIR}/params.env"
-  echo "RESOURCE_GROUP=$RESOURCE_GROUP" >> "${EVIDENCE_RUN_DIR}/params.env"
-  echo "LOCATION=$LOCATION" >> "${EVIDENCE_RUN_DIR}/params.env"
+storage_account_name() {
+  printf '%sst%s' "$NAME_PREFIX" "$(compute_hash)"
 }
 
-# destroy_resources: Destruye los recursos
-destroy_resources() {
-  log_info "========================================"
-  log_info "[FASE 1] Destruccion de recursos"
-  log_info "========================================"
-  
-  if [ "$SKIP_DESTROY" -eq 1 ]; then
-    log_info "  [SKIP] Destruccion omitida (--skip-destroy)"
-    return 0
-  fi
-  
-  local destroy_start
-  destroy_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  
-  # Verificar que el RG existe
-  if ! az group show --name "$RESOURCE_GROUP" >/dev/null 2>&1; then
-    log_info "  Resource Group no existe. Nada que destruir."
-    echo "DESTROY_RESULT=SKIPPED_NO_RG" >> "${EVIDENCE_RUN_DIR}/destroy-status.env"
-    return 0
-  fi
-  
-  # Registrar estado antes de destruir
-  log_info "  Registrando estado antes de destruir..."
-  az resource list \
+webapp_name() {
+  printf '%s-app-%s' "$NAME_PREFIX" "$(compute_hash)"
+}
+
+storage_account_id() {
+  az storage account show \
+    --name "$(storage_account_name)" \
     --resource-group "$RESOURCE_GROUP" \
-    --query "[*].{name:name,type:type}" \
-    --output json > "${EVIDENCE_RUN_DIR}/pre-destroy-inventory.json" 2>&1 || true
-  
-  # Ejecutar destruccion
-  log_info "  Ejecutando destroy-week1.sh..."
-  if bash "$SCRIPT_DIR/../destroy-week1.sh" --yes 2>&1 | tee "${EVIDENCE_RUN_DIR}/destroy.log"; then
-    log_info "    [OK] Destruccion iniciada"
-    echo "DESTROY_RESULT=SUCCESS" >> "${EVIDENCE_RUN_DIR}/destroy-status.env"
-  else
-    log_error "    [FAIL] Error en destruccion"
-    echo "DESTROY_RESULT=FAILED" >> "${EVIDENCE_RUN_DIR}/destroy-status.env"
-  fi
-  
-  local destroy_end
-  destroy_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  
-  jq ".destroyStartTime = \"$destroy_start\" | .destroyEndTime = \"$destroy_end\"" \
-    "${EVIDENCE_RUN_DIR}/metadata.json" > "${EVIDENCE_RUN_DIR}/metadata.tmp" \
-    && mv "${EVIDENCE_RUN_DIR}/metadata.tmp" "${EVIDENCE_RUN_DIR}/metadata.json"
+    --query id -o tsv
 }
 
-# rebuild_resources: Reconstruye los recursos
-rebuild_resources() {
-  log_info "========================================"
-  log_info "[FASE 2] Reconstruccion de recursos"
-  log_info "========================================"
-  
-  local rebuild_start
-  rebuild_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  
-  if bash "$SCRIPT_DIR/../deploy-week1.sh" 2>&1 | tee "${EVIDENCE_RUN_DIR}/rebuild.log"; then
-    log_info "  [OK] Reconstruccion completada"
-    echo "REBUILD_RESULT=SUCCESS" >> "${EVIDENCE_RUN_DIR}/rebuild-status.env"
-  else
-    log_error "  [FAIL] Error en reconstruccion"
-    echo "REBUILD_RESULT=FAILED" >> "${EVIDENCE_RUN_DIR}/rebuild-status.env"
-    return 1
-  fi
-  
-  # Generar inventario de recursos
-  az resource list \
-    --resource-group "$RESOURCE_GROUP" \
-    --query "[*].{name:name,type:type,location:location}" \
-    --output json > "${EVIDENCE_RUN_DIR}/post-rebuild-inventory.json" 2>&1
-  
-  local rebuild_end
-  rebuild_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  
-  jq ".rebuildStartTime = \"$rebuild_start\" | .rebuildEndTime = \"$rebuild_end\"" \
-    "${EVIDENCE_RUN_DIR}/metadata.json" > "${EVIDENCE_RUN_DIR}/metadata.tmp" \
-    && mv "${EVIDENCE_RUN_DIR}/metadata.tmp" "${EVIDENCE_RUN_DIR}/metadata.json"
+blob_container_scope() {
+  printf '%s/blobServices/default/containers/raw-transactions-production' "$(storage_account_id)"
 }
 
-# run_validations: Ejecuta las validaciones
-run_validations() {
-  log_info "========================================"
-  log_info "[FASE 3] Ejecutando validaciones"
-  log_info "========================================"
-  
-  local validation_start
-  validation_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  
-  local all_passed=true
-  
-  # Validate week1
-  log_info "  validate-week1.sh..."
-  if bash "$SCRIPT_DIR/../validate-week1.sh" > "${EVIDENCE_RUN_DIR}/validate-week1.log" 2>&1; then
-    log_info "    [OK]"
-    echo "VALIDATE_RESULT=PASSED" >> "${EVIDENCE_RUN_DIR}/validation-status.env"
-  else
-    log_warn "    [WARN]"
-    echo "VALIDATE_RESULT=WARNINGS" >> "${EVIDENCE_RUN_DIR}/validation-status.env"
-    all_passed=false
-  fi
-  
-  # Maven verify
-  log_info "  mvn clean verify..."
-  if mvn clean verify > "${EVIDENCE_RUN_DIR}/maven-verify.log" 2>&1; then
-    log_info "    [OK]"
-    echo "MAVEN_RESULT=PASSED" >> "${EVIDENCE_RUN_DIR}/validation-status.env"
-  else
-    log_warn "    [WARN]"
-    echo "MAVEN_RESULT=WARNINGS" >> "${EVIDENCE_RUN_DIR}/validation-status.env"
-    all_passed=false
-  fi
-  
-  # HA Test (si existe .env con variables de API)
-  if [ -n "${CENTINELA_API_BASE_URL:-}" ]; then
-    log_info "  test-ha.sh..."
-    if bash "$SCRIPT_DIR/../test-ha.sh" > "${EVIDENCE_RUN_DIR}/ha-test.log" 2>&1; then
-      log_info "    [OK]"
-      echo "HA_RESULT=PASSED" >> "${EVIDENCE_RUN_DIR}/validation-status.env"
-    else
-      log_warn "    [WARN] HA test no disponible o fallido"
-      echo "HA_RESULT=SKIPPED" >> "${EVIDENCE_RUN_DIR}/validation-status.env"
+wait_for_health() {
+  local url="https://$(webapp_name).azurewebsites.net/actuator/health"
+  local attempts="${HEALTH_MAX_ATTEMPTS:-30}" status
+  for attempt in $(seq 1 "$attempts"); do
+    if ! status="$(curl --silent --output "$EVIDENCE_DIR/health-response.json" --write-out '%{http_code}' --max-time 15 "$url")"; then
+      status="000"
     fi
-  else
-    log_info "  [SKIP] HA test (variables de API no definidas)"
-    echo "HA_RESULT=SKIPPED_NO_API" >> "${EVIDENCE_RUN_DIR}/validation-status.env"
-  fi
-  
-  local validation_end
-  validation_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  
-  jq ".validationStartTime = \"$validation_start\" | .validationEndTime = \"$validation_end\"" \
-    "${EVIDENCE_RUN_DIR}/metadata.json" > "${EVIDENCE_RUN_DIR}/metadata.tmp" \
-    && mv "${EVIDENCE_RUN_DIR}/metadata.tmp" "${EVIDENCE_RUN_DIR}/metadata.json"
-  
-  [ "$all_passed" = true ]
+    if [ "$status" = "200" ]; then
+      log_info "Health check disponible en el intento $attempt."
+      return 0
+    fi
+    log_warn "Health check HTTP $status; reintento $attempt/$attempts."
+    sleep 10
+  done
+  die "La aplicacion no alcanzo estado saludable en $url."
 }
 
-# cleanup_final: Limpieza final de recursos
-cleanup_final() {
-  log_info "========================================"
-  log_info "[FASE 4] Limpieza final"
-  log_info "========================================"
-  
+resolve_service_token() {
+  if [ -n "$SERVICE_TOKEN_COMMAND" ]; then
+    CENTINELA_SERVICE_TOKEN="$(bash -lc "$SERVICE_TOKEN_COMMAND")"
+  fi
+  [ -n "${CENTINELA_SERVICE_TOKEN:-}" ] \
+    || die "Falta token SERVICE. Define CENTINELA_SERVICE_TOKEN o --service-token-command."
+  export CENTINELA_SERVICE_TOKEN
+}
+
+run_base_validations() {
+  local validators=(
+    validate-storage.sh
+    validate-app-service.sh
+    validate-network.sh
+    validate-entra-roles.sh
+    validate-rbac.sh
+    validate-managed-identity.sh
+    validate-documentation.sh
+    validate-week1-scope.sh
+  )
+  local validator
+  for validator in "${validators[@]}"; do
+    log_info "Ejecutando $validator..."
+    "$SCRIPT_DIR/$validator" > "$EVIDENCE_DIR/${validator%.sh}.log" 2>&1
+  done
+}
+
+write_metadata() {
+  jq -n \
+    --arg runId "$RUN_ID" \
+    --arg startTime "$START_TIME" \
+    --arg commit "$(git rev-parse HEAD 2>/dev/null || echo N/A)" \
+    --arg branch "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo N/A)" \
+    --arg resourceGroup "$RESOURCE_GROUP" \
+    --arg subscription "$(mask "$SUBSCRIPTION_ID")" \
+    '{runId:$runId,testIds:["TEST-S1-026","TEST-S1-027"],startTime:$startTime,commit:$commit,branch:$branch,resourceGroup:$resourceGroup,subscription:$subscription}' \
+    > "$EVIDENCE_DIR/metadata.json"
+}
+
+update_metadata_result() {
+  local result="$1"
+  jq \
+    --arg endTime "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg result "$result" \
+    --argjson resourcesKept "$KEEP_RESOURCES" \
+    --argjson entraKept "$KEEP_ENTRA_FINAL" \
+    '. + {endTime:$endTime,result:$result,resourcesKept:($resourcesKept == 1),entraKept:($entraKept == 1)}' \
+    "$EVIDENCE_DIR/metadata.json" > "$EVIDENCE_DIR/metadata.tmp"
+  mv "$EVIDENCE_DIR/metadata.tmp" "$EVIDENCE_DIR/metadata.json"
+}
+
+assign_role_if_missing() {
+  local role="$1" scope="$2"
+  local count
+  count="$(az role assignment list \
+    --assignee "$TEST_PRINCIPAL_ID" \
+    --role "$role" \
+    --scope "$scope" \
+    --query 'length(@)' -o tsv 2>/dev/null || echo 0)"
+
+  if [ "${count:-0}" -eq 0 ]; then
+    az role assignment create \
+      --assignee-object-id "$TEST_PRINCIPAL_ID" \
+      --assignee-principal-type "$TEST_PRINCIPAL_TYPE" \
+      --role "$role" \
+      --scope "$scope" \
+      --only-show-errors >/dev/null
+    printf '%s\t%s\n' "$role" "$scope" >> "$CREATED_RBAC_FILE"
+    printf 'CREATED role=%s scope=%s\n' "$role" "$(mask "$scope")" >> "$EVIDENCE_DIR/temporary-rbac.log"
+  else
+    printf 'EXISTING role=%s scope=%s\n' "$role" "$(mask "$scope")" >> "$EVIDENCE_DIR/temporary-rbac.log"
+  fi
+}
+
+assign_test_roles() {
+  [ "$SKIP_TEST_RBAC" -eq 1 ] && {
+    log_warn "--skip-test-rbac: se asume que la identidad ya tiene permisos de Queue y Blob."
+    return 0
+  }
+
+  case "$TEST_PRINCIPAL_TYPE" in
+    User|ServicePrincipal) ;;
+    *) die "--test-principal-type debe ser User o ServicePrincipal." ;;
+  esac
+
+  if [ -z "$TEST_PRINCIPAL_ID" ]; then
+    TEST_PRINCIPAL_ID="$(az ad signed-in-user show --query id -o tsv 2>/dev/null || true)"
+    TEST_PRINCIPAL_TYPE="User"
+  fi
+  [ -n "$TEST_PRINCIPAL_ID" ] \
+    || die "No se pudo resolver la identidad de prueba. Usa --test-principal y --test-principal-type."
+
+  : > "$EVIDENCE_DIR/temporary-rbac.log"
+  : > "$CREATED_RBAC_FILE"
+  local sa_id role
+  sa_id="$(storage_account_id)"
+  for role in "${QUEUE_ROLES[@]}"; do
+    assign_role_if_missing "$role" "$sa_id"
+  done
+  assign_role_if_missing "$BLOB_TEST_ROLE" "$(blob_container_scope)"
+  TEST_RBAC_MANAGED=1
+
+  log_info "Esperando ${RBAC_PROPAGATION_SECONDS}s por propagacion RBAC..."
+  sleep "$RBAC_PROPAGATION_SECONDS"
+}
+
+revoke_test_roles() {
+  [ "$SKIP_TEST_RBAC" -eq 1 ] && return 0
+  [ "$TEST_RBAC_MANAGED" -eq 1 ] || return 0
+  [ -s "$CREATED_RBAC_FILE" ] || return 0
+
+  local role scope
+  while IFS=$'\t' read -r role scope; do
+    [ -n "$role" ] || continue
+    az role assignment delete \
+      --assignee "$TEST_PRINCIPAL_ID" \
+      --role "$role" \
+      --scope "$scope" >/dev/null 2>&1 || true
+    printf 'REVOKED role=%s scope=%s\n' "$role" "$(mask "$scope")" >> "$EVIDENCE_DIR/temporary-rbac.log"
+  done < "$CREATED_RBAC_FILE"
+
+  printf 'REVOKED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$EVIDENCE_DIR/temporary-rbac.log"
+  TEST_RBAC_MANAGED=0
+}
+
+final_cleanup() {
   if [ "$KEEP_RESOURCES" -eq 1 ]; then
-    log_warn "  [EXCEPTION] Recursos se mantendran activos"
-    log_warn "  REQUIERE: Excepcion documentada con responsable y fecha de retiro"
-    
-    cat > "${EVIDENCE_RUN_DIR}/KEEP_RESOURCES_EXCEPTION.md" <<EOF
-# Excepcion: Recursos Mantenidos Activos
+    cat > "$EVIDENCE_DIR/KEEP_RESOURCES_EXCEPTION.md" <<EXCEPTION
+# Excepcion temporal de limpieza
 
-## Justificacion
-
-Recursos mantenidos para $(whoami) por razones de evaluacion.
-
-## Responsable
-
-$(whoami)
-
-## Fecha Limite de Destruccion
-
-$(date -u -d "+7 days" +%Y-%m-%d 2>/dev/null || echo "7 dias desde ahora")
-
-## Accion Requerida
-
-Ejecutar: \`bash scripts/destroy-week1.sh --yes\`
-
-## Aprobacion
-
-Requerida por Persona 4 (Revisor) antes de commit.
-EOF
-    
-    echo "CLEANUP_RESULT=EXCEPTION" >> "${EVIDENCE_RUN_DIR}/cleanup-status.env"
+- Responsable: $(whoami)
+- Fecha UTC: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+- Fecha maxima de retiro: $(date -u -d '+7 days' +%Y-%m-%d 2>/dev/null || echo 'definir manualmente')
+- Comando de retiro: `bash scripts/destroy-week1.sh --yes --wait`
+EXCEPTION
+    FINAL_CLEANUP_DONE=1
     return 0
   fi
-  
-  local cleanup_start
-  cleanup_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  
-  log_info "  Destruyendo recursos al finalizar..."
-  if bash "$SCRIPT_DIR/../destroy-week1.sh" --yes 2>&1 | tee "${EVIDENCE_RUN_DIR}/cleanup.log"; then
-    log_info "    [OK] Recursos eliminados"
-    echo "CLEANUP_RESULT=SUCCESS" >> "${EVIDENCE_RUN_DIR}/cleanup-status.env"
+
+  if [ "$(az group exists --name "$RESOURCE_GROUP" -o tsv 2>/dev/null || echo false)" = "true" ]; then
+    local destroy_args=(--yes --wait)
+    if [ "$KEEP_ENTRA_FINAL" -eq 1 ]; then
+      destroy_args+=(--keep-entra)
+      cat > "$EVIDENCE_DIR/KEEP_ENTRA_EXCEPTION.md" <<EXCEPTION
+# Excepcion de limpieza tenant-level
+
+La App Registration se conserva porque fue solicitado con `--keep-entra-final`.
+El Resource Group y los recursos con costo sí deben quedar eliminados. Esta excepción se
+usa cuando la misma identidad continúa siendo requerida por una semana posterior.
+EXCEPTION
+    fi
+    "$SCRIPT_DIR/../destroy-week1.sh" "${destroy_args[@]}" 2>&1 | tee "$EVIDENCE_DIR/cleanup.log"
   else
-    log_error "    [FAIL] Error en limpieza final"
-    echo "CLEANUP_RESULT=FAILED" >> "${EVIDENCE_RUN_DIR}/cleanup-status.env"
+    printf 'Resource Group ya ausente.\n' > "$EVIDENCE_DIR/cleanup.log"
   fi
-  
-  local cleanup_end
-  cleanup_end="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  
-  jq ".cleanupStartTime = \"$cleanup_start\" | .cleanupEndTime = \"$cleanup_end\"" \
-    "${EVIDENCE_RUN_DIR}/metadata.json" > "${EVIDENCE_RUN_DIR}/metadata.tmp" \
-    && mv "${EVIDENCE_RUN_DIR}/metadata.tmp" "${EVIDENCE_RUN_DIR}/metadata.json"
+
+  [ "$(az group exists --name "$RESOURCE_GROUP" -o tsv)" = "false" ] \
+    || die "La limpieza final no elimino el Resource Group."
+  FINAL_CLEANUP_DONE=1
 }
 
-# generate_summary: Genera resumen final
-generate_summary() {
-  log_info "Generando resumen final..."
-  
-  local pre_destroy_count=0
-  local post_rebuild_count=0
-  
-  if [ -f "${EVIDENCE_RUN_DIR}/pre-destroy-inventory.json" ]; then
-    pre_destroy_count=$(jq 'length' "${EVIDENCE_RUN_DIR}/pre-destroy-inventory.json" 2>/dev/null || echo "0")
-  fi
-  
-  if [ -f "${EVIDENCE_RUN_DIR}/post-rebuild-inventory.json" ]; then
-    post_rebuild_count=$(jq 'length' "${EVIDENCE_RUN_DIR}/post-rebuild-inventory.json" 2>/dev/null || echo "0")
-  fi
-  
-  cat > "${EVIDENCE_RUN_DIR}/validation-summary.md" <<EOF
-# Resumen de Prueba - TEST-S1-027
+write_summary() {
+  local result="$1" detail="$2"
+  cat > "$EVIDENCE_DIR/validation-summary.md" <<SUMMARY
+# Cierre verificable de Semana 1
 
-## Informacion del Run
+- **Run ID:** $RUN_ID
+- **Pruebas:** TEST-S1-020, TEST-S1-024, TEST-S1-026 y TEST-S1-027
+- **Resultado:** $result
+- **Commit:** $(git rev-parse HEAD 2>/dev/null || echo N/A)
+- **Fecha UTC:** $(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-- **Run ID**: ${RUN_ID}
-- **Commit**: $(git rev-parse HEAD 2>/dev/null || echo "N/A")
-- **Branch**: $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "N/A")
-- **Fecha**: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+## Resultado por bloque
 
-## Parametros
+- Reconstruccion desde Resource Group inexistente: $(test -f "$EVIDENCE_DIR/deployment.log" && echo EJECUTADA || echo NO_COMPLETADA)
+- Validacion Azure: $(test -f "$EVIDENCE_DIR/validate-week1.log" && echo EJECUTADA || echo NO_COMPLETADA)
+- Maven: $(grep -q 'BUILD SUCCESS' "$EVIDENCE_DIR/maven-verify.log" 2>/dev/null && echo PASSED || echo NO_CONFIRMADO)
+- Queue staging: $(test -f "$EVIDENCE_DIR/queue-staging.log" && echo EJECUTADA || echo NO_COMPLETADA)
+- Queue production: $(test -f "$EVIDENCE_DIR/queue-production.log" && echo EJECUTADA || echo NO_COMPLETADA)
+- Alta disponibilidad: $(test -f "$EVIDENCE_DIR/ha.log" && echo EJECUTADA || echo NO_COMPLETADA)
+- Limpieza final del RG: $([ "$FINAL_CLEANUP_DONE" -eq 1 ] && echo CONFIRMADA || echo NO_CONFIRMADA)
+- App Registration final: $([ "$KEEP_ENTRA_FINAL" -eq 1 ] && echo CONSERVADA_CON_EXCEPCION || echo ELIMINADA)
 
-- Subscription: \`$(mask "$SUBSCRIPTION_ID")\`
-- Resource Group: \`${RESOURCE_GROUP}\`
-- Location: \`${LOCATION}\`
+## Detalle
 
-## Fases
-
-### Fase 1: Destruccion
-
-- **Recursos antes**: ${pre_destroy_count}
-- **Log**: [destroy.log](./destroy.log)
-
-### Fase 2: Reconstruccion
-
-- **Recursos despues**: ${post_rebuild_count}
-- **Log**: [rebuild.log](./rebuild.log)
-- **Inventario**: [post-rebuild-inventory.json](./post-rebuild-inventory.json)
-
-### Fase 3: Validaciones
-
-$(if grep -q "PASSED" "${EVIDENCE_RUN_DIR}/validation-status.env" 2>/dev/null; then echo "- **Status**: VALIDACIONES PASARON"; else echo "- **Status**: CON ADVERTENCIAS"; fi)
-- Logs: [validate-week1.log](./validate-week1.log), [maven-verify.log](./maven-verify.log)
-
-### Fase 4: Limpieza Final
-
-$(if [ "$KEEP_RESOURCES" -eq 1 ]; then
-echo "- **Status**: EXCEPCION (recursos mantenidos)"
-echo "- **Archivo**: [KEEP_RESOURCES_EXCEPTION.md](./KEEP_RESOURCES_EXCEPTION.md)"
-else
-echo "- **Status**: RECURSOS ELIMINADOS"
-echo "- **Log**: [cleanup.log](./cleanup.log)"
-fi)
-
-## Conclusion
-
-TEST-S1-027: **$( [ -f "${EVIDENCE_RUN_DIR}/cleanup.log" ] && echo "COMPLETADO" || echo "CON EXCEPCION" )**
-
-La secuencia destroy -> rebuild -> validate -> cleanup se ejecuto exitosamente.
-EOF
-  
-  # Metadata final
-  jq ".endTime = \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" | .result = \"COMPLETED\" | .resourcesKept = $KEEP_RESOURCES" \
-    "${EVIDENCE_RUN_DIR}/metadata.json" > "${EVIDENCE_RUN_DIR}/metadata.tmp" \
-    && mv "${EVIDENCE_RUN_DIR}/metadata.tmp" "${EVIDENCE_RUN_DIR}/metadata.json"
+$detail
+SUMMARY
+  update_metadata_result "$result"
 }
 
-# -----------------------------------------------------------------------------
-# Main
-# -----------------------------------------------------------------------------
+on_exit() {
+  local rc=$?
+  trap - EXIT
+
+  revoke_test_roles || true
+  if [ "$FINAL_CLEANUP_DONE" -eq 0 ]; then
+    final_cleanup || rc=1
+  fi
+
+  if [ "$rc" -ne 0 ] && [ ! -f "$EVIDENCE_DIR/validation-summary.md" ]; then
+    write_summary "FAILED" "El cierre fallo. Se intento revocar RBAC temporal y limpiar los recursos."
+  fi
+  [ -n "$CREATED_RBAC_FILE" ] && rm -f "$CREATED_RBAC_FILE"
+  exit "$rc"
+}
 
 main() {
-  log_info "========================================"
-  log_info "  TEST-S1-027: Destroy -> Rebuild -> Cleanup"
-  log_info "========================================"
-  log_info "Run ID: $RUN_ID"
-  log_info ""
-  
   require_cmd az
   require_cmd jq
-  
-  az account show >/dev/null 2>&1 \
-    || die "No hay sesion Azure activa. Ejecuta az login."
-  
-  setup_evidence
-  load_and_validate_params
-  
-  destroy_resources || true
-  rebuild_resources
-  run_validations || true
-  cleanup_final
-  generate_summary
-  
-  log_info ""
-  log_info "========================================"
-  log_info "PRUEBA TEST-S1-027 COMPLETADA"
-  log_info "========================================"
-  log_info "Evidencia: $EVIDENCE_RUN_DIR"
+  require_cmd mvn
+  require_cmd curl
+  require_cmd sha1sum
+
+  load_parameters
+  validate_parameters
+  [ "$CONFIRM_RESOURCE_GROUP" = "$RESOURCE_GROUP" ]     || die "Proteccion destructiva: usa --confirm-resource-group '$RESOURCE_GROUP'."
+  if [ -z "${CENTINELA_SERVICE_TOKEN:-}" ] && [ -z "$SERVICE_TOKEN_COMMAND" ]; then
+    die "Define CENTINELA_SERVICE_TOKEN o --service-token-command antes de iniciar."
+  fi
+
+  az account show >/dev/null 2>&1 || die "No hay sesion Azure activa. Ejecuta az login."
+  local active_sub
+  active_sub="$(az account show --query id -o tsv)"
+  [ "$active_sub" = "$SUBSCRIPTION_ID" ] \
+    || die "Suscripcion activa ($(mask "$active_sub")) != SUBSCRIPTION_ID ($(mask "$SUBSCRIPTION_ID"))."
+
+  mkdir -p "$EVIDENCE_DIR"
+  CREATED_RBAC_FILE="$(mktemp)"
+  write_metadata
+  trap on_exit EXIT
+
+  # Fase 1: estado limpio confirmado.
+  if [ "$(az group exists --name "$RESOURCE_GROUP" -o tsv)" = "true" ]; then
+    az resource list --resource-group "$RESOURCE_GROUP" \
+      --query '[].{name:name,type:type}' -o json > "$EVIDENCE_DIR/pre-destroy-inventory.json"
+    "$SCRIPT_DIR/../destroy-week1.sh" --yes --wait --keep-entra 2>&1 | tee "$EVIDENCE_DIR/destroy.log"
+  else
+    printf 'Resource Group inicialmente ausente.\n' > "$EVIDENCE_DIR/destroy.log"
+  fi
+  [ "$(az group exists --name "$RESOURCE_GROUP" -o tsv)" = "false" ] \
+    || die "No se alcanzo el estado limpio inicial."
+
+  # Fase 2: reconstruccion completa y validaciones base.
+  "$SCRIPT_DIR/../deploy-week1.sh" 2>&1 | tee "$EVIDENCE_DIR/deployment.log"
+  (cd "$REPO_ROOT" && mvn clean verify) > "$EVIDENCE_DIR/maven-verify.log" 2>&1
+  "$SCRIPT_DIR/../deploy-application.sh" --swap 2>&1 | tee "$EVIDENCE_DIR/application-deploy.log"
+  wait_for_health
+  "$SCRIPT_DIR/../validate-week1.sh" > "$EVIDENCE_DIR/validate-week1.log" 2>&1
+  run_base_validations
+  resolve_service_token
+
+  az resource list --resource-group "$RESOURCE_GROUP" \
+    --query '[].{name:name,type:type,location:location}' -o json > "$EVIDENCE_DIR/resource-inventory.json"
+  [ "$(jq 'length' "$EVIDENCE_DIR/resource-inventory.json")" -gt 0 ] \
+    || die "No se inventariaron recursos despues de reconstruir."
+
+  # Fase 3: permisos temporales y pruebas Azure pendientes.
+  assign_test_roles
+
+  export STAGING_STORAGE_ACCOUNT="$(storage_account_name)"
+  export PRODUCTION_STORAGE_ACCOUNT="$(storage_account_name)"
+  export CENTINELA_STORAGE_ACCOUNT="$(storage_account_name)"
+  export CENTINELA_RAW_TRANSACTIONS_CONTAINER="raw-transactions-production"
+  export CENTINELA_API_BASE_URL="https://$(webapp_name).azurewebsites.net"
+
+  "$SCRIPT_DIR/../validate-queue.sh" staging > "$EVIDENCE_DIR/queue-staging.log" 2>&1
+  "$SCRIPT_DIR/../validate-queue.sh" production > "$EVIDENCE_DIR/queue-production.log" 2>&1
+  "$SCRIPT_DIR/../test-ha.sh" > "$EVIDENCE_DIR/ha.log" 2>&1
+
+  revoke_test_roles
+
+  # Fase 4: una instancia final y limpieza.
+  local final_capacity
+  final_capacity="$(az appservice plan show \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "${NAME_PREFIX}-asp-week1" \
+    --query sku.capacity -o tsv)"
+  [ "$final_capacity" = "1" ] || die "La capacidad previa a limpieza no es 1 (actual: $final_capacity)."
+
+  final_cleanup
+  FINAL_RESULT="PASSED"
+  write_summary "$FINAL_RESULT" "El entorno fue destruido, reconstruido, validado, probado en Queue y HA, y limpiado sin aceptar advertencias como exito."
+  log_info "CIERRE SEMANA 1 PASSED. Evidencia: $EVIDENCE_DIR"
 }
 
 main "$@"

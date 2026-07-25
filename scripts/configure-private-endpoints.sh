@@ -242,7 +242,7 @@ main() {
 
   local tmp_dir template_file params_file
   tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "$tmp_dir"' EXIT
+  trap "rm -rf '$tmp_dir'" EXIT
   template_file="$tmp_dir/pe.template.json"
   params_file="$tmp_dir/pe.parameters.json"
   render_arm_template > "$template_file"

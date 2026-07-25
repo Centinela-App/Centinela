@@ -1,13 +1,5 @@
 #!/usr/bin/env bash
-# test-ha.sh — Prueba de Alta Disponibilidad (HU-S1-005 / FEAT-S1-005)
-# Objetivo: Demostrar que la API continua aceptando solicitudes cuando una
-# instancia es retirada, y regresa inmediatamente a una instancia.
-#
-# Dependencias: ISS-S1-004, ISS-S1-005, ISS-S1-006, ISS-S1-008, ISS-S1-011
-# Prerequisites: az, jq, curl, azurescript de aplicacion desplegada
-#
-# Uso: ./scripts/test-ha.sh
-#
+# TEST-S1-024: continuidad de la API al reducir temporalmente dos workers a uno.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,383 +8,280 @@ source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/parameters.sh
 source "$SCRIPT_DIR/lib/parameters.sh"
 
-# -----------------------------------------------------------------------------
-# Configuracion de la prueba
-# -----------------------------------------------------------------------------
-: "${CENTINELA_API_BASE_URL:?Define CENTINELA_API_BASE_URL}"
-: "${CENTINELA_SERVICE_TOKEN:?Define CENTINELA_SERVICE_TOKEN}"
-: "${CENTINELA_STORAGE_ACCOUNT:?Define CENTINELA_STORAGE_ACCOUNT}"
-: "${CENTINELA_RAW_TRANSACTIONS_CONTAINER:?Define CENTINELA_RAW_TRANSACTIONS_CONTAINER}"
+SCALE_UP_INSTANCES="${SCALE_UP_INSTANCES:-2}"
+TARGET_INSTANCES=1
+TEST_DURATION_SECONDS="${TEST_DURATION_SECONDS:-120}"
+LOAD_INTERVAL="${LOAD_INTERVAL:-0.5}"
+RANDOM_DELAY_MAX="${RANDOM_DELAY_MAX:-0.3}"
+SCALE_WAIT_TIMEOUT_SECONDS="${SCALE_WAIT_TIMEOUT_SECONDS:-300}"
+SCALE_POLL_SECONDS="${SCALE_POLL_SECONDS:-10}"
 
-# Variables de la prueba HA
-TARGET_INSTANCES=1          # Instancias objetivo (valor final)
-SCALE_UP_INSTANCES=2        # Instancias temporales para la prueba
-MIN_INSTANCES=1             # Minimo de instancias
-TEST_DURATION_SECONDS=120   # Duracion de la prueba de carga (2 minutos)
-LOAD_INTERVAL=0.5           # Intervalo entre solicitudes (segundos)
-RANDOM_DELAY_MAX=0.3        # Variabilidad aleatoria maxima
+RUN_ID="run-$(date -u +%Y%m%dT%H%M%SZ)-$RANDOM"
+EVIDENCE_DIR="$SCRIPT_DIR/../docs/evidence/ha/$RUN_ID"
+LOAD_LOG="$EVIDENCE_DIR/load-results.log"
+LOAD_CSV="${LOAD_LOG%.log}.csv"
+RECONCILIATION_REPORT="$EVIDENCE_DIR/reconciliation.json"
+SCALE_EVENT_LOG="$EVIDENCE_DIR/scale-events.log"
+SUMMARY_REPORT="$EVIDENCE_DIR/summary-report.json"
 
-# Archivos de evidencia
-EVIDENCE_DIR="${SCRIPT_DIR}/../docs/evidence/ha"
-LOAD_LOG="${EVIDENCE_DIR}/load-results-$(date -u +%Y%m%dT%H%M%SZ).log"
-RECONCILIATION_REPORT="${EVIDENCE_DIR}/reconciliation-$(date -u +%Y%m%dT%H%M%SZ).json"
-SCALE_EVENT_LOG="${EVIDENCE_DIR}/scale-events-$(date -u +%Y%m%dT%H%M%SZ).log"
+ORIGINAL_INSTANCES=""
+CAPACITY_RESTORED=false
+SYNTHETIC_CLEANUP_DONE=false
+TEST_FINISHED=false
 
-# -----------------------------------------------------------------------------
-# Funciones de utilidad
-# -----------------------------------------------------------------------------
-
-# log_scale_event: Registra eventos de escalado con timestamp
-log_scale_event() {
-  local event="$1"
-  local timestamp
-  timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  echo "[$timestamp] $event" >> "$SCALE_EVENT_LOG"
-  log_info "SCALE: $event"
+compute_hash() {
+  printf '%s|%s|%s' "$NAME_PREFIX" "$SUBSCRIPTION_ID" "$RESOURCE_GROUP" | sha1sum | cut -c1-6
 }
 
-# get_webapp_name: nombre determinista del Web App, identico al de
-# provision-app-service.sh (compute_web_app_name): <prefix>-app-<sha1(prefix|sub|rg)[:6]>.
-get_webapp_name() {
-  local hash
-  hash="$(printf '%s|%s|%s' "$NAME_PREFIX" "$SUBSCRIPTION_ID" "$RESOURCE_GROUP" | sha1sum | cut -c1-6)"
-  printf '%s-app-%s' "$NAME_PREFIX" "$hash"
-}
-
-# get_plan_name: nombre del App Service Plan (compute_plan_name): <prefix>-asp-week1.
-# El escalado horizontal en un plan Standard (S1) se hace sobre el plan, no sobre el
-# Web App (minimumElasticInstanceCount solo aplica a planes Premium/Elastic).
 get_plan_name() {
   printf '%s-asp-week1' "$NAME_PREFIX"
 }
 
-# get_current_instances: numero actual de workers del App Service Plan.
-get_current_instances() {
-  local plan_name
-  plan_name="$(get_plan_name)"
-  az appservice plan show \
-    --resource-group "$RESOURCE_GROUP" \
-    --name "$plan_name" \
-    --query "sku.capacity" \
-    --output tsv 2>/dev/null || echo "1"
+get_webapp_name() {
+  printf '%s-app-%s' "$NAME_PREFIX" "$(compute_hash)"
 }
 
-# scale_to: Escala el App Service Plan al numero de instancias (workers) especificado.
+get_storage_account_name() {
+  printf '%sst%s' "$NAME_PREFIX" "$(compute_hash)"
+}
+
+get_current_instances() {
+  az appservice plan show \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$(get_plan_name)" \
+    --query sku.capacity -o tsv
+}
+
+log_scale_event() {
+  printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$SCALE_EVENT_LOG" >&2
+}
+
+wait_for_capacity() {
+  local expected="$1" started_at current elapsed
+  started_at="$(date +%s)"
+  while true; do
+    current="$(get_current_instances)"
+    if [ "$current" = "$expected" ]; then
+      log_scale_event "Capacidad confirmada: $current worker(s)."
+      return 0
+    fi
+
+    elapsed=$(( $(date +%s) - started_at ))
+    if [ "$elapsed" -ge "$SCALE_WAIT_TIMEOUT_SECONDS" ]; then
+      die "Timeout esperando capacidad=$expected; Azure reporta $current."
+    fi
+    sleep "$SCALE_POLL_SECONDS"
+  done
+}
+
 scale_to() {
-  local target_instances="$1"
-  local plan_name
-  plan_name="$(get_plan_name)"
-
-  log_scale_event "Escalando el plan '$plan_name' a $target_instances instancia(s)"
-
+  local target="$1"
+  log_scale_event "Solicitando capacidad=$target en el plan $(get_plan_name)."
   az appservice plan update \
     --resource-group "$RESOURCE_GROUP" \
-    --name "$plan_name" \
-    --number-of-workers "$target_instances" \
-    --only-show-errors 2>&1 | tee -a "$SCALE_EVENT_LOG"
-
-  # Esperar a que se aplique el cambio
-  log_info "Esperando aplicacion del cambio de escala..."
-  sleep 10
-
-  log_scale_event "Escala completada a $target_instances instancia(s)"
+    --name "$(get_plan_name)" \
+    --number-of-workers "$target" \
+    --only-show-errors >/dev/null
+  wait_for_capacity "$target"
 }
 
-# capture_scale_event: Captura evidencia del evento de escala
-capture_scale_event() {
-  local event_type="$1"
-  local webapp_name
-  webapp_name="$(get_webapp_name)"
-  
-  log_scale_event "Capturando evidencia del evento: $event_type"
-  
-  # Registrar estado del Web App y la capacidad (workers) del plan.
-  local plan_name
-  plan_name="$(get_plan_name)"
-  az webapp show \
-    --resource-group "$RESOURCE_GROUP" \
-    --name "$webapp_name" \
-    --query "{ name: name, state: state, hostName: enabledHostNames[0] }" \
-    --output json 2>&1 | tee -a "$SCALE_EVENT_LOG"
-  az appservice plan show \
-    --resource-group "$RESOURCE_GROUP" \
-    --name "$plan_name" \
-    --query "{ plan: name, instanceCount: sku.capacity }" \
-    --output json 2>&1 | tee -a "$SCALE_EVENT_LOG"
+capture_state() {
+  local label="$1"
+  jq -n \
+    --arg label "$label" \
+    --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg webApp "$(get_webapp_name)" \
+    --arg plan "$(get_plan_name)" \
+    --arg capacity "$(get_current_instances)" \
+    '{label:$label,timestamp:$timestamp,webApp:$webApp,plan:$plan,capacity:($capacity|tonumber)}' \
+    >> "$EVIDENCE_DIR/capacity-events.jsonl"
 }
 
-# verify_two_instances: Verifica si Azure permite escalar a dos instancias
-verify_two_instances() {
-  local plan_name
-  plan_name="$(get_plan_name)"
-
-  log_info "Verificando capacidad de escalar el plan '$plan_name' a $SCALE_UP_INSTANCES instancias..."
-
-  # Intentar escalar el plan a dos workers
-  if az appservice plan update \
-    --resource-group "$RESOURCE_GROUP" \
-    --name "$plan_name" \
-    --number-of-workers "$SCALE_UP_INSTANCES" \
-    --only-show-errors >/dev/null 2>&1; then
-    log_info "Escalado a dos instancias exitoso"
+restore_capacity() {
+  local target="${ORIGINAL_INSTANCES:-$TARGET_INSTANCES}"
+  if [ -z "$ORIGINAL_INSTANCES" ]; then
     return 0
+  fi
+
+  log_info "Restaurando capacidad original ($target worker)..."
+  if scale_to "$target"; then
+    CAPACITY_RESTORED=true
+    capture_state "RESTORED"
   else
-    log_error "Azure no permite escalar a dos instancias. Prueba detenida."
+    CAPACITY_RESTORED=false
+    log_error "No se pudo restaurar la capacidad original."
     return 1
   fi
 }
 
-# cleanup: Restaura la capacidad original y guarda evidencia
-cleanup() {
+write_failure_summary() {
+  local rc="$1"
+  [ -f "$SUMMARY_REPORT" ] && return 0
+  jq -n \
+    --arg runId "$RUN_ID" \
+    --arg testId "TEST-S1-024" \
+    --arg status "FAILED" \
+    --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --argjson exitCode "$rc" \
+    --argjson capacityRestored "$CAPACITY_RESTORED" \
+    '{runId:$runId,testId:$testId,status:$status,timestamp:$timestamp,exitCode:$exitCode,capacityRestored:$capacityRestored}' \
+    > "$SUMMARY_REPORT"
+}
+
+on_exit() {
   local rc=$?
-  local final_instances="$TARGET_INSTANCES"
-  
-  log_info "Iniciando limpieza y restauracion de capacidad..."
-  
-  # Restaurar a una instancia
-  if [ -f "${SCRIPT_DIR}/lib/parameters.sh" ]; then
-    scale_to "$final_instances"
-    log_scale_event "RESTORED: Capacidad restaurada a $final_instances instancia(s) (exit code: $rc)"
+  trap - EXIT
+
+  if [ -n "$ORIGINAL_INSTANCES" ] && [ "$CAPACITY_RESTORED" != true ]; then
+    restore_capacity || rc=1
   fi
-  
-  # Guardar evidencia parcial si hay errores
-  if [ $rc -ne 0 ]; then
-    log_warn "La prueba fallo con codigo $rc. Guardando evidencia parcial..."
-    echo "TEST_RESULT=FAILED" >> "$EVIDENCE_DIR/test-status.env"
-    echo "TEST_EXIT_CODE=$rc" >> "$EVIDENCE_DIR/test-status.env"
-    echo "TEST_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$EVIDENCE_DIR/test-status.env"
-  else
-    echo "TEST_RESULT=PASSED" >> "$EVIDENCE_DIR/test-status.env"
-    echo "TEST_EXIT_CODE=0" >> "$EVIDENCE_DIR/test-status.env"
-    echo "TEST_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$EVIDENCE_DIR/test-status.env"
+
+  if [ "$SYNTHETIC_CLEANUP_DONE" != true ] && [ -f "$EVIDENCE_DIR/accepted-transactions.csv" ]; then
+    cleanup_synthetic_blobs || rc=1
   fi
-  
-  log_info "Limpieza completada."
+
+  if [ "$rc" -ne 0 ]; then
+    write_failure_summary "$rc"
+  fi
+
+  exit "$rc"
 }
 
-# generate_summary_report: Genera el reporte final de la prueba
-generate_summary_report() {
-  local total_requests="$1"
-  local accepted_requests="$2"
-  local failed_requests="$3"
-  local reconciled_requests="$4"
-  
-  local test_duration
-  test_duration="$(($TEST_DURATION_SECONDS))"
-  local throughput
-  throughput="$(echo "scale=2; $total_requests / $test_duration" | bc 2>/dev/null || echo "N/A")"
-  
-  cat > "$EVIDENCE_DIR/summary-report.json" <<JSON
-{
-  "testId": "HA-S1-005-$(date -u +%Y%m%dT%H%M%SZ)",
-  "feature": "FEAT-S1-005",
-  "historyId": "HU-S1-005",
-  "testCase": "TEST-S1-024",
-  "startTime": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "endTime": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "configuration": {
-    "initialInstances": $TARGET_INSTANCES,
-    "testInstances": $SCALE_UP_INSTANCES,
-    "finalInstances": $TARGET_INSTANCES,
-    "testDurationSeconds": $test_duration,
-    "loadIntervalSeconds": $LOAD_INTERVAL
-  },
-  "results": {
-    "totalRequests": $total_requests,
-    "acceptedRequests": $accepted_requests,
-    "failedRequests": $failed_requests,
-    "reconciledRequests": $reconciled_requests,
-    "throughputPerSecond": "$throughput"
-  },
-  "acceptanceCriteria": {
-    "startedWithOneInstance": true,
-    "scaledTemporarilyToTwo": true,
-    "oneInstanceRemovedDuringLoad": true,
-    "apiContinuedResponding": $([ "$failed_requests" -lt "$total_requests" ] && echo "true" || echo "false"),
-    "all202HaveBlob": $([ "$accepted_requests" -le "$reconciled_requests" ] && echo "true" || echo "false"),
-    "capacityRestored": true
-  },
-  "status": "COMPLETED"
-}
-JSON
-  
-  log_info "Reporte de resumen guardado en: $EVIDENCE_DIR/summary-report.json"
-}
+cleanup_synthetic_blobs() {
+  local accepted_file="$EVIDENCE_DIR/accepted-transactions.csv"
+  local cleanup_log="$EVIDENCE_DIR/blob-cleanup.log"
+  : > "$cleanup_log"
 
-# -----------------------------------------------------------------------------
-# Flujo principal de la prueba
-# -----------------------------------------------------------------------------
+  [ -f "$accepted_file" ] || die "No existe el detalle de transacciones aceptadas para limpiar."
+
+  local blob_name verified failures=0
+  while IFS=',' read -r _ _ _ _ blob_name verified _; do
+    [ "$blob_name" = "blobName" ] && continue
+    [ -n "$blob_name" ] || continue
+
+    if az storage blob delete \
+      --account-name "$CENTINELA_STORAGE_ACCOUNT" \
+      --container-name "$CENTINELA_RAW_TRANSACTIONS_CONTAINER" \
+      --name "$blob_name" \
+      --auth-mode login \
+      --only-show-errors >/dev/null; then
+      printf 'DELETED %s\n' "$blob_name" >> "$cleanup_log"
+    else
+      printf 'FAILED %s\n' "$blob_name" >> "$cleanup_log"
+      failures=$((failures + 1))
+    fi
+  done < "$accepted_file"
+
+  [ "$failures" -eq 0 ] || die "No se pudieron eliminar $failures Blob(s) sinteticos."
+  SYNTHETIC_CLEANUP_DONE=true
+}
 
 main() {
-  log_info "========================================"
-  log_info "  Prueba de Alta Disponibilidad"
-  log_info "  HU-S1-005 / FEAT-S1-005"
-  log_info "========================================"
-  
-  # Verificar precondiciones
   require_cmd az
   require_cmd jq
   require_cmd curl
-  az account show >/dev/null 2>&1 || die "No hay sesion Azure activa. Ejecuta az login."
-  
-  # Cargar y validar parametros
+  require_cmd sha1sum
+
   load_parameters
   validate_parameters
-  
-  # Crear directorio de evidencia
+
+  : "${CENTINELA_SERVICE_TOKEN:?Define CENTINELA_SERVICE_TOKEN con un token SERVICE valido}"
+  CENTINELA_STORAGE_ACCOUNT="${CENTINELA_STORAGE_ACCOUNT:-$(get_storage_account_name)}"
+  CENTINELA_RAW_TRANSACTIONS_CONTAINER="${CENTINELA_RAW_TRANSACTIONS_CONTAINER:-raw-transactions-production}"
+  CENTINELA_API_BASE_URL="${CENTINELA_API_BASE_URL:-https://$(get_webapp_name).azurewebsites.net}"
+  export CENTINELA_STORAGE_ACCOUNT CENTINELA_RAW_TRANSACTIONS_CONTAINER CENTINELA_API_BASE_URL
+
+  az account show >/dev/null 2>&1 || die "No hay sesion Azure activa. Ejecuta az login."
+  local active_sub
+  active_sub="$(az account show --query id -o tsv)"
+  [ "$active_sub" = "$SUBSCRIPTION_ID" ] \
+    || die "Suscripcion activa ($(mask "$active_sub")) != SUBSCRIPTION_ID ($(mask "$SUBSCRIPTION_ID"))."
+
   mkdir -p "$EVIDENCE_DIR"
-  log_info "Directorio de evidencia: $EVIDENCE_DIR"
-  
-  # Inicializar archivos de log
   : > "$SCALE_EVENT_LOG"
-  : > "$LOAD_LOG"
-  
-  log_scale_event "INIT: Iniciando prueba HA"
-  
-  # Registrar capacidad original
-  local original_instances
-  original_instances="$(get_current_instances)"
-  log_scale_event "ORIGINAL: Capacidad original = $original_instances instancia(s)"
-  echo "ORIGINAL_INSTANCES=$original_instances" >> "$EVIDENCE_DIR/test-status.env"
-  
-  # Registrar estado inicial del Web App
-  capture_scale_event "INITIAL_STATE"
-  
-  # TRAP para limpieza en caso de fallo
-  trap cleanup EXIT
-  
-  # ==========================================
-  # FASE 1: Escalar a dos instancias
-  # ==========================================
-  log_info ""
-  log_info "[FASE 1] Verificando y escalando a dos instancias..."
-  
-  if ! verify_two_instances; then
-    log_error "No se puede escalar a dos instancias. Prueba detenida sin exito."
-    log_scale_event "ABORT: Azure no permite escalar a dos instancias"
-    exit 1
-  fi
-  
+  trap on_exit EXIT
+
+  ORIGINAL_INSTANCES="$(get_current_instances)"
+  [ "$ORIGINAL_INSTANCES" = "$TARGET_INSTANCES" ] \
+    || die "La prueba debe iniciar con una instancia; capacidad actual=$ORIGINAL_INSTANCES."
+  capture_state "INITIAL"
+
   scale_to "$SCALE_UP_INSTANCES"
-  capture_scale_event "SCALED_TO_TWO"
-  
-  # ==========================================
-  # FASE 2: Enviar carga continua en segundo plano
-  # ==========================================
-  log_info ""
-  log_info "[FASE 2] Iniciando carga continua en segundo plano..."
-  
-  # Iniciar el script de carga en segundo plano
+  capture_state "SCALED_TO_TWO"
+
   "$SCRIPT_DIR/tests/send-transaction-load.sh" \
     --duration "$TEST_DURATION_SECONDS" \
     --interval "$LOAD_INTERVAL" \
+    --max-random-delay "$RANDOM_DELAY_MAX" \
     --output "$LOAD_LOG" \
-    --max-random-delay "$RANDOM_DELAY_MAX" &
-  
+    --load-log "$LOAD_CSV" > "$EVIDENCE_DIR/load-script-output.txt" 2>&1 &
   local load_pid=$!
-  log_info "Proceso de carga iniciado (PID: $load_pid)"
-  
-  # Esperar unos segundos para que la carga se estabilice
-  sleep 5
-  
-  # ==========================================
-  # FASE 3: Retirar una instancia (durante carga)
-  # ==========================================
-  log_info ""
-  log_info "[FASE 3] Retirando una instancia durante la carga..."
-  
-  log_scale_event "REMOVING: Retirando una instancia (2 -> 1)"
-  capture_scale_event "BEFORE_INSTANCE_REMOVAL"
-  
+
+  sleep 10
+  capture_state "BEFORE_INSTANCE_REMOVAL"
   scale_to "$TARGET_INSTANCES"
-  capture_scale_event "AFTER_INSTANCE_REMOVAL"
-  
-  # ==========================================
-  # FASE 4: Continuar carga hasta fin
-  # ==========================================
-  log_info ""
-  log_info "[FASE 4] Continuando carga hasta finalizar..."
-  
-  # Esperar a que termine el proceso de carga
-  wait $load_pid || true
-  
-  # ==========================================
-  # FASE 5: Reconciliar transacciones aceptadas
-  # ==========================================
-  log_info ""
-  log_info "[FASE 5] Reconciliando transacciones aceptadas con Blobs..."
-  
-  # Ejecutar script de reconciliacion
-  "$SCRIPT_DIR/tests/reconcile-accepted-transactions.sh" \
-    --load-log "$LOAD_LOG" \
+  capture_state "AFTER_INSTANCE_REMOVAL"
+
+  local load_exit=0
+  if wait "$load_pid"; then
+    load_exit=0
+  else
+    load_exit=$?
+  fi
+  [ "$load_exit" -eq 0 ] || die "El generador de carga fallo con codigo $load_exit."
+
+  local reconciliation_exit=0
+  if "$SCRIPT_DIR/tests/reconcile-accepted-transactions.sh" \
+    --load-log "$LOAD_CSV" \
     --output "$RECONCILIATION_REPORT" \
     --storage-account "$CENTINELA_STORAGE_ACCOUNT" \
-    --container "$CENTINELA_RAW_TRANSACTIONS_CONTAINER"
-  
-  local reconciliation_exit=$?
-  
-  # Extraer metricas del reporte de reconciliacion
-  local total_requests=0
-  local accepted_requests=0
-  local failed_requests=0
-  local reconciled_requests=0
-  
-  if [ -f "$RECONCILIATION_REPORT" ]; then
-    total_requests=$(jq -r '.metrics.totalRequests // 0' "$RECONCILIATION_REPORT" 2>/dev/null || echo "0")
-    accepted_requests=$(jq -r '.metrics.acceptedRequests // 0' "$RECONCILIATION_REPORT" 2>/dev/null || echo "0")
-    failed_requests=$(jq -r '.metrics.failedRequests // 0' "$RECONCILIATION_REPORT" 2>/dev/null || echo "0")
-    reconciled_requests=$(jq -r '.metrics.reconciledRequests // 0' "$RECONCILIATION_REPORT" 2>/dev/null || echo "0")
-  fi
-  
-  # ==========================================
-  # FASE 6: Generar reporte final
-  # ==========================================
-  log_info ""
-  log_info "[FASE 6] Generando reporte final..."
-  
-  generate_summary_report "$total_requests" "$accepted_requests" "$failed_requests" "$reconciled_requests"
-  
-  # Verificar criterios de aceptacion
-  log_info ""
-  log_info "========================================"
-  log_info "  RESUMEN DE LA PRUEBA"
-  log_info "========================================"
-  log_info "Solicitudes totales:   $total_requests"
-  log_info "Aceptadas (202):       $accepted_requests"
-  log_info "Fallidas:              $failed_requests"
-  log_info "Reconciliadas:         $reconciled_requests"
-  log_info "Capacidad final:       $TARGET_INSTANCES instancia(s)"
-  log_info ""
-  
-  # Validar criterios de aceptacion
-  local criteria_passed=true
-  
-  if [ "$failed_requests" -ge "$total_requests" ]; then
-    log_error "CRITERIO FALLIDO: La API no continuo respondiendo"
-    criteria_passed=false
-  fi
-  
-  if [ "$accepted_requests" -gt "$reconciled_requests" ]; then
-    log_error "CRITERIO FALLIDO: No todas las respuestas 202 tienen Blob asociado"
-    criteria_passed=false
-  fi
-  
-  if [ "$reconciliation_exit" -ne 0 ]; then
-    log_warn "CRITERIO ADVERTENCIA: Reconciliacion finalizo con codigo $reconciliation_exit"
-  fi
-  
-  log_info "========================================"
-  
-  if [ "$criteria_passed" = true ]; then
-    log_info "PRUEBA HA COMPLETADA EXITOSAMENTE"
-    log_scale_event "SUCCESS: Prueba HA completada exitosamente"
-    exit 0
+    --container "$CENTINELA_RAW_TRANSACTIONS_CONTAINER" \
+    > "$EVIDENCE_DIR/reconciliation.log" 2>&1; then
+    reconciliation_exit=0
   else
-    log_error "PRUEBA HA FALLIDA - Verificar criterios de aceptacion"
-    log_scale_event "FAILURE: Prueba HA fallida"
-    exit 1
+    reconciliation_exit=$?
   fi
+
+  local total accepted failed reconciled other
+  total="$(jq -r '.metrics.totalRequests' "$RECONCILIATION_REPORT")"
+  accepted="$(jq -r '.metrics.acceptedRequests' "$RECONCILIATION_REPORT")"
+  failed="$(jq -r '.metrics.failedRequests' "$RECONCILIATION_REPORT")"
+  other="$(jq -r '.metrics.otherHttpResponses' "$RECONCILIATION_REPORT")"
+  reconciled="$(jq -r '.metrics.reconciledRequests' "$RECONCILIATION_REPORT")"
+
+  local api_continued=false all_202_have_blob=false passed=false
+  [ "$total" -gt 0 ] && [ "$accepted" -gt 0 ] && [ "$failed" -lt "$total" ] && api_continued=true
+  [ "$accepted" -eq "$reconciled" ] && [ "$reconciliation_exit" -eq 0 ] && all_202_have_blob=true
+
+  restore_capacity
+  [ "$(get_current_instances)" = "$TARGET_INSTANCES" ] || die "La capacidad final no quedo en una instancia."
+
+  cleanup_synthetic_blobs
+
+  if [ "$api_continued" = true ] && [ "$all_202_have_blob" = true ] && [ "$CAPACITY_RESTORED" = true ]; then
+    passed=true
+  fi
+
+  jq -n \
+    --arg runId "$RUN_ID" \
+    --arg testId "TEST-S1-024" \
+    --arg status "$([ "$passed" = true ] && echo PASSED || echo FAILED)" \
+    --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg commit "$(git rev-parse HEAD 2>/dev/null || echo N/A)" \
+    --argjson totalRequests "$total" \
+    --argjson acceptedRequests "$accepted" \
+    --argjson failedRequests "$failed" \
+    --argjson otherHttpResponses "$other" \
+    --argjson reconciledRequests "$reconciled" \
+    --argjson apiContinued "$api_continued" \
+    --argjson all202HaveBlob "$all_202_have_blob" \
+    --argjson capacityRestored "$CAPACITY_RESTORED" \
+    '{runId:$runId,testId:$testId,status:$status,timestamp:$timestamp,commit:$commit,results:{totalRequests:$totalRequests,acceptedRequests:$acceptedRequests,failedRequests:$failedRequests,otherHttpResponses:$otherHttpResponses,reconciledRequests:$reconciledRequests},acceptanceCriteria:{apiContinuedResponding:$apiContinued,all202HaveBlob:$all202HaveBlob,capacityRestored:$capacityRestored}}' \
+    > "$SUMMARY_REPORT"
+
+  [ "$passed" = true ] || die "TEST-S1-024 no cumplio todos los criterios. Revisa $SUMMARY_REPORT."
+  TEST_FINISHED=true
+  log_info "TEST-S1-024 PASSED. Evidencia: $EVIDENCE_DIR"
 }
 
-# Ejecutar main
 main "$@"

@@ -398,7 +398,7 @@ main() {
 
   local tmp_dir template_file params_file
   tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "$tmp_dir"' EXIT
+  trap "rm -rf '$tmp_dir'" EXIT
   template_file="$tmp_dir/app-service.template.json"
   params_file="$tmp_dir/app-service.parameters.json"
   render_arm_template    "$plan_name" "$app_name" "$APP_SERVICE_SKU" "$tier" "$sa_name" > "$template_file"
