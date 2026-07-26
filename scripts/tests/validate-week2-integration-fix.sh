@@ -36,9 +36,9 @@ contains scoring-function/src/main/java/com/centinela/scoring/infrastructure/mon
 contains scoring-function/src/main/java/com/centinela/scoring/infrastructure/config/KeyVaultConnectionStrings.java \
   'cosmos-mongo-connection-string' 'El nombre del secreto Mongo es uniforme.'
 contains scoring-function/src/main/java/com/centinela/scoring/infrastructure/queue/StorageQueueFlaggedCasePublisher.java \
-  'OffsetDateTime occurredAt' 'El productor incluye occurredAt en flagged-case-v1.'
+  'String occurredAt' 'El productor incluye occurredAt en flagged-case-v1.'
 contains scoring-function/src/main/java/com/centinela/scoring/infrastructure/queue/StorageQueueFlaggedCasePublisher.java \
-  'OffsetDateTime scoredAt' 'El productor incluye scoredAt en flagged-case-v1.'
+  'String scoredAt' 'El productor incluye scoredAt en flagged-case-v1.'
 contains src/main/java/com/centinela/casemanagement/infrastructure/messaging/FlaggedCaseQueueListener.java \
   'deleteMessage\(messageId, message\.popReceipt\(\)\)' 'El listener conserva y usa popReceipt.'
 contains src/main/java/com/centinela/casemanagement/infrastructure/messaging/FlaggedCaseQueueListener.java \
