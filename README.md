@@ -245,6 +245,11 @@ bash scripts/watch-deploy.sh
 > la cierra al terminar; el estado final es siempre `publicNetworkAccess=Disabled`.
 > Detalles y límites en [DESPLIEGUE.md](DESPLIEGUE.md#7-nota-sobre-la-conexión-a-postgresql).
 
+> **¿Aprendiendo Azure?** [GUIA_TECNICA_SCRIPTS.md](GUIA_TECNICA_SCRIPTS.md) explica qué
+> hace cada script, cómo funciona por dentro y **cómo harías lo mismo a mano** con `az` o
+> en el Portal, además de los conceptos base (control plane vs data plane, Managed
+> Identity, RBAC por ámbito, Private Endpoints y DNS privado).
+
 > **Errores corregidos.** El endurecimiento de estos scripts está documentado en
 > [docs/4_Infraestructura_y_Despliegue/6_Informe_Errores_Corregidos.md](docs/4_Infraestructura_y_Despliegue/6_Informe_Errores_Corregidos.md):
 > 30 defectos por causa raíz, incluidos cuatro que producían despliegues aparentemente
