@@ -109,8 +109,13 @@ compute_eventgrid_topic_name() {
 assert_not_forbidden_role() {
   local role="$1" f
   for f in "${FORBIDDEN_ROLES[@]}"; do
-    [ "$role" = "$f" ] && die "REGLA DURA violada: intento de asignar rol prohibido '$role'."
+    if [ "$role" = "$f" ]; then
+      die "REGLA DURA violada: intento de asignar rol prohibido '$role'."
+    fi
   done
+  # 'return 0' explicito: sin el, el ultimo '[ ... ]' falso deja estado 1 y
+  # 'set -e' aborta el script en silencio al validar un rol permitido.
+  return 0
 }
 
 assign_role_scope() {
@@ -223,7 +228,22 @@ assign_queue_roles() {
       assign_role_scope "$FUNCTION_PRINCIPAL" "ServicePrincipal" "$QUEUE_SENDER_ROLE" "$scope"
     done
   else
-    log_warn "Sin --function-principal: rol de encolado (Function) DIFERIDO a cuando exista su identidad (ISS-S2-007/009)."
+    # Si la Function ya existe (redespliegue), se resuelve su identidad aqui en vez
+    # de avisar de un diferimiento que no corresponde: el mensaje fijo afirmaba
+    # "aun no existe" incluso con la Function desplegada y confundia al leer el log.
+    local fn_name fn_pid
+    fn_name="${SCORING_FUNCTION_APP_NAME:-$(printf '%s-scoring-fn-%s' "$NAME_PREFIX" "$(printf '%s|%s|%s' "$NAME_PREFIX" "$SUBSCRIPTION_ID" "$RESOURCE_GROUP" | sha1sum | cut -c1-6)")}"
+    fn_pid="$(az functionapp identity show --name "$fn_name" --resource-group "$RESOURCE_GROUP" \
+      --query principalId -o tsv 2>/dev/null || true)"
+    if [ -n "$fn_pid" ]; then
+      log_info "Function '$fn_name' ya existe: asignando '$QUEUE_SENDER_ROLE' sobre las colas..."
+      for q in "${CASE_QUEUES[@]}"; do
+        scope="${sa_id}/queueServices/default/queues/${q}"
+        assign_role_scope "$fn_pid" "ServicePrincipal" "$QUEUE_SENDER_ROLE" "$scope"
+      done
+    else
+      log_info "La Function aun no existe; su rol de encolado se aplicara en ISS-S2-007/009."
+    fi
   fi
 
   if [ -n "$CONSUMER_PRINCIPAL" ]; then

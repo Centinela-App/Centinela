@@ -1,0 +1,7 @@
+appDisplayName=cent-api-week1
+appId=86c768d2-8724-48ab-a10a-9a35483bfd35
+servicePrincipalObjectId=8bc1948b-6c4b-4915-b0f8-ea6d7efdaa0d
+appRoles=SERVICE ANALYST ADMINISTRATOR AUDITOR
+issuerUri=https://login.microsoftonline.com/d9a713ad-7338-4d1c-ad5b-a3184fd5b318/v2.0
+audience=api://86c768d2-8724-48ab-a10a-9a35483bfd35
+note=sin secreto de cliente; settings OAuth2 aplicados a produccion y staging

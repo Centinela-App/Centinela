@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # ISS-S2-007 corrective integration: complete the private Storage path used by
 # the Azure Functions host. Week 1 already creates Blob and Queue private
-# endpoints; the host also needs the Table endpoint for identity-based storage.
+# endpoints; the host needs two mas:
+#
+#   table -> estado interno del host con acceso por identidad.
+#   file  -> el host MONTA un recurso compartido de Azure Files como su sistema
+#            de archivos. Con el Storage en publicNetworkAccess=Disabled y sin
+#            este endpoint, el montaje falla, el contenedor se termina con
+#            "Container failed to remount volume. Terminate." y la Function App
+#            responde 503 indefinidamente aunque ARM la reporte 'Running'.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,7 +18,8 @@ source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/parameters.sh"
 
 readonly SUBNET_PE="snet-private-endpoints"
-readonly DNS_ZONE_TABLE="privatelink.table.core.windows.net"
+# Subrecursos de Storage que el host de Functions necesita por red privada.
+readonly HOST_SUBRESOURCES=(table file)
 
 VALIDATE_ONLY=0
 for arg in "$@"; do
@@ -28,33 +36,38 @@ resource_hash() {
 compute_storage_account_name() { printf '%sst%s' "$NAME_PREFIX" "$(resource_hash)"; }
 compute_vnet_name() { printf '%s-vnet-week1' "$NAME_PREFIX"; }
 
+# ensure_private_dns_zone <vnet> <subrecurso> — crea y vincula la zona privada
+# 'privatelink.<subrecurso>.core.windows.net'.
 ensure_private_dns_zone() {
-  local vnet="$1" link
-  link="${vnet}-table-link"
-  if az network private-dns zone show --name "$DNS_ZONE_TABLE" \
+  local vnet="$1" sub="$2" zone link
+  zone="privatelink.${sub}.core.windows.net"
+  link="${vnet}-${sub}-link"
+  if az network private-dns zone show --name "$zone" \
       --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
-    log_info "Zona DNS privada '$DNS_ZONE_TABLE' ya existe."
+    log_info "Zona DNS privada '$zone' ya existe."
   else
-    log_info "Creando zona DNS privada '$DNS_ZONE_TABLE'..."
+    log_info "Creando zona DNS privada '$zone'..."
     with_retry 3 az network private-dns zone create \
-      --name "$DNS_ZONE_TABLE" --resource-group "$RESOURCE_GROUP" --output none
+      --name "$zone" --resource-group "$RESOURCE_GROUP" --output none
   fi
 
-  if az network private-dns link vnet show --zone-name "$DNS_ZONE_TABLE" \
+  if az network private-dns link vnet show --zone-name "$zone" \
       --resource-group "$RESOURCE_GROUP" --name "$link" >/dev/null 2>&1; then
     log_info "Vinculo VNet '$link' ya existe."
   else
-    log_info "Vinculando '$DNS_ZONE_TABLE' con '$vnet'..."
+    log_info "Vinculando '$zone' con '$vnet'..."
     with_retry 3 az network private-dns link vnet create \
-      --zone-name "$DNS_ZONE_TABLE" --resource-group "$RESOURCE_GROUP" \
+      --zone-name "$zone" --resource-group "$RESOURCE_GROUP" \
       --name "$link" --virtual-network "$vnet" \
       --registration-enabled false --output none
   fi
 }
 
-ensure_table_private_endpoint() {
-  local storage="$1" vnet="$2" pe storage_id
-  pe="${storage}-table-pe"
+# ensure_storage_private_endpoint <storage> <vnet> <subrecurso>
+ensure_storage_private_endpoint() {
+  local storage="$1" vnet="$2" sub="$3" pe zone storage_id
+  pe="${storage}-${sub}-pe"
+  zone="privatelink.${sub}.core.windows.net"
   storage_id="$(az storage account show --name "$storage" \
     --resource-group "$RESOURCE_GROUP" --query id -o tsv)"
 
@@ -62,53 +75,56 @@ ensure_table_private_endpoint() {
       --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
     log_info "Private Endpoint '$pe' ya existe."
   else
-    log_info "Creando Private Endpoint '$pe' para Storage Table..."
+    log_info "Creando Private Endpoint '$pe' para Storage ${sub}..."
     with_retry 3 az network private-endpoint create \
       --name "$pe" --resource-group "$RESOURCE_GROUP" --location "$LOCATION" \
       --vnet-name "$vnet" --subnet "$SUBNET_PE" \
       --private-connection-resource-id "$storage_id" \
-      --group-id table --connection-name "${pe}-plsc" --output none
+      --group-id "$sub" --connection-name "${pe}-plsc" --output none
   fi
 
-  if az network private-endpoint dns-zone-group show \
-      --resource-group "$RESOURCE_GROUP" --endpoint-name "$pe" \
-      --name default >/dev/null 2>&1; then
+  if pe_dns_zone_group_exists "$pe" "$RESOURCE_GROUP"; then
     log_info "DNS zone group de '$pe' ya existe."
   else
-    log_info "Registrando la IP privada de Table en '$DNS_ZONE_TABLE'..."
+    log_info "Registrando la IP privada de ${sub} en '$zone'..."
     with_retry 3 az network private-endpoint dns-zone-group create \
       --resource-group "$RESOURCE_GROUP" --endpoint-name "$pe" \
-      --name default --private-dns-zone "$DNS_ZONE_TABLE" \
-      --zone-name table --output none
+      --name default --private-dns-zone "$zone" \
+      --zone-name "$sub" --output none
   fi
 }
 
 verify_private_path() {
-  local storage="$1" pe group state records public_access
-  pe="${storage}-table-pe"
-  group="$(az network private-endpoint show --name "$pe" \
-    --resource-group "$RESOURCE_GROUP" \
-    --query 'privateLinkServiceConnections[0].groupIds[0]' -o tsv)"
-  [ "$group" = "table" ] || die "PE '$pe' apunta a '$group' y no a 'table'."
+  local storage="$1" sub pe group state zone public_access
 
-  state="$(az network private-endpoint show --name "$pe" \
-    --resource-group "$RESOURCE_GROUP" \
-    --query 'privateLinkServiceConnections[0].privateLinkServiceConnectionState.status' \
-    -o tsv 2>/dev/null || echo '')"
-  [ "$state" = "Approved" ] || log_warn "PE '$pe' en estado '${state:-desconocido}'."
+  for sub in "${HOST_SUBRESOURCES[@]}"; do
+    pe="${storage}-${sub}-pe"
+    zone="privatelink.${sub}.core.windows.net"
 
-  records="$(az network private-dns record-set a list \
-    --zone-name "$DNS_ZONE_TABLE" --resource-group "$RESOURCE_GROUP" \
-    --query 'length(@)' -o tsv 2>/dev/null || echo 0)"
-  [ "${records:-0}" -ge 1 ] 2>/dev/null \
-    || die "La zona '$DNS_ZONE_TABLE' no tiene registros A."
+    group="$(az network private-endpoint show --name "$pe" \
+      --resource-group "$RESOURCE_GROUP" \
+      --query 'privateLinkServiceConnections[0].groupIds[0]' -o tsv)"
+    [ "$group" = "$sub" ] || die "PE '$pe' apunta a '$group' y no a '$sub'."
+
+    state="$(az network private-endpoint show --name "$pe" \
+      --resource-group "$RESOURCE_GROUP" \
+      --query 'privateLinkServiceConnections[0].privateLinkServiceConnectionState.status' \
+      -o tsv 2>/dev/null || echo '')"
+    [ "$state" = "Approved" ] || log_warn "PE '$pe' en estado '${state:-desconocido}'."
+
+    # El registro A lo publica Azure de forma asincrona tras crear el zone group:
+    # sin espera, la verificacion falla por carrera aunque todo este bien creado.
+    retry_until 8 private_dns_has_a_records "$zone" "$RESOURCE_GROUP" \
+      || die "La zona '$zone' no tiene registros A tras esperar su publicacion."
+    log_info "  OK ruta privada de Storage ${sub}: PE aprobado y DNS privado resuelto."
+  done
 
   public_access="$(az storage account show --name "$storage" \
     --resource-group "$RESOURCE_GROUP" --query publicNetworkAccess -o tsv)"
   [ "$public_access" = "Disabled" ] \
     || die "Storage publicNetworkAccess='$public_access'; se esperaba Disabled."
 
-  log_info "Ruta privada de Storage Table validada: PE aprobado, DNS privado y acceso publico bloqueado."
+  log_info "Ruta privada del host de Functions validada; acceso publico bloqueado."
 }
 
 main() {
@@ -135,8 +151,11 @@ main() {
     --resource-group "$RESOURCE_GROUP" --name "$SUBNET_PE" >/dev/null 2>&1 \
     || die "No existe '$vnet/$SUBNET_PE'."
 
-  ensure_private_dns_zone "$vnet"
-  ensure_table_private_endpoint "$storage" "$vnet"
+  local sub
+  for sub in "${HOST_SUBRESOURCES[@]}"; do
+    ensure_private_dns_zone "$vnet" "$sub"
+    ensure_storage_private_endpoint "$storage" "$vnet" "$sub"
+  done
   verify_private_path "$storage"
 }
 

@@ -178,7 +178,7 @@ verify_all_resources() {
   local pe_group pe group gid state
   for pe_group in "${blob_pe}:blob" "${queue_pe}:queue"; do
     pe="${pe_group%%:*}"; group="${pe_group##*:}"
-    az network private-endpoint show --name "$pe" --resource-group "$rg" >/dev/null 2>&1 \
+    retry_until 5 az network private-endpoint show --name "$pe" --resource-group "$rg" \
       || die "Falta Private Endpoint: $pe"
     gid="$(az network private-endpoint show --name "$pe" --resource-group "$rg" \
       --query "privateLinkServiceConnections[0].groupIds[0]" -o tsv 2>/dev/null || echo "")"
@@ -189,12 +189,21 @@ verify_all_resources() {
     log_info "  OK PE '$pe' -> subrecurso '$group' (estado: ${state:-?})."
   done
 
+  # El privateDnsZoneGroup registra la IP privada de forma ASINCRONA: el A record
+  # aparece segundos despues de que el PE quede aprobado. Se espera antes de fallar.
   log_info "Verificando registro DNS privado (A records) en las zonas..."
   local z n
+  zone_has_a_records() {
+    local zone="$1" rgroup="$2" count
+    count="$(az network private-dns record-set a list --zone-name "$zone" --resource-group "$rgroup" \
+      --query "length(@)" -o tsv 2>/dev/null || echo 0)"
+    [ "${count:-0}" -ge 1 ] 2>/dev/null
+  }
   for z in "$DNS_ZONE_BLOB" "$DNS_ZONE_QUEUE"; do
+    retry_until 8 zone_has_a_records "$z" "$rg" \
+      || die "Zona DNS '$z' sin registros A (el privateDnsZoneGroup no registro la IP privada)."
     n="$(az network private-dns record-set a list --zone-name "$z" --resource-group "$rg" \
       --query "length(@)" -o tsv 2>/dev/null || echo 0)"
-    [ "$n" -ge 1 ] 2>/dev/null || die "Zona DNS '$z' sin registros A (el privateDnsZoneGroup no registro la IP privada)."
     log_info "  OK zona '$z' con $n registro(s) A privado(s)."
   done
 

@@ -83,6 +83,45 @@ resolve_artifact() {
   printf '%s' "$jar"
 }
 
+# wait_until_healthy <app> <slot> — el criterio de exito real de un despliegue no
+# es que 'az' devuelva 0, sino que la aplicacion responda. Sustituye al rastreo
+# interno de 'az', que se rendia antes de tiempo y daba falsos negativos.
+#
+# Presupuesto: 30 intentos x 20s = 10 min. Medido en este entorno, produccion
+# tarda ~220s en pasar la sonda y staging ~365s: ambos slots comparten el plan S1,
+# asi que el segundo en arrancar compite por CPU y tarda bastante mas. 10 minutos
+# dejan margen para el caso lento sin colgar el despliegue si algo va realmente mal.
+readonly HEALTH_MAX_ATTEMPTS=30
+readonly HEALTH_WAIT_SECONDS=20
+
+wait_until_healthy() {
+  local app="$1" slot="$2" host attempt=1 code
+  if [ "$slot" = "$PRODUCTION_SLOT_ALIAS" ]; then
+    host="${app}.azurewebsites.net"
+  else
+    host="${app}-${slot}.azurewebsites.net"
+  fi
+
+  while [ "$attempt" -le "$HEALTH_MAX_ATTEMPTS" ]; do
+    # '|| true' es OBLIGATORIO: mientras la app arranca, curl termina con codigo
+    # 28 (timeout) o 7 (sin conexion) y, bajo 'set -e', esa sustitucion de
+    # comandos abortaria el despliegue justo cuando hay que seguir esperando.
+    # No se anade '|| echo 000': curl ya imprime '000' al fallar y un segundo
+    # fallback deja la salida como '000000'.
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 \
+              "https://${host}/actuator/health" 2>/dev/null || true)"
+    code="${code:-000}"
+    if [ "$code" = "200" ]; then
+      log_info "  Salud OK en https://${host}/actuator/health (intento $attempt)."
+      return 0
+    fi
+    log_info "  Aun arrancando (HTTP ${code}); reintento $attempt/$HEALTH_MAX_ATTEMPTS en ${HEALTH_WAIT_SECONDS}s..."
+    sleep "$HEALTH_WAIT_SECONDS"
+    attempt=$((attempt + 1))
+  done
+  die "'$host' no respondio 200 en /actuator/health tras $HEALTH_MAX_ATTEMPTS intentos. El artefacto se publico, pero la app no arranca."
+}
+
 main() {
   load_parameters
   validate_parameters
@@ -115,6 +154,12 @@ main() {
   fi
 
   log_info "Publicando artefacto (az webapp deploy --type jar)..."
+  # --track-status false: por defecto 'az webapp deploy' vigila el arranque del
+  #   contenedor y se rinde con "site failed to start within 10 mins". Esta app
+  #   tarda ~220s en pasar la sonda de calentamiento (Spring Boot + Flyway +
+  #   primera conexion a PostgreSQL por Private Endpoint), asi que ese rastreo
+  #   produce FALSOS NEGATIVOS: reporta fallo sobre un despliegue que si funciono.
+  #   Se publica el artefacto y la salud se verifica abajo, con criterio propio.
   with_retry 3 az webapp deploy \
     --name "$app_name" \
     --resource-group "$RESOURCE_GROUP" \
@@ -122,7 +167,10 @@ main() {
     --type jar \
     --src-path "$artifact" \
     --async false \
+    --track-status false \
     >/dev/null
+  log_info "Artefacto publicado. Esperando a que '$TARGET_SLOT' responda..."
+  wait_until_healthy "$app_name" "$TARGET_SLOT"
   log_info "Despliegue completado en slot '$TARGET_SLOT'."
 
   if [ "$DO_SWAP" -eq 1 ]; then
