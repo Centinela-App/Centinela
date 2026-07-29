@@ -13,6 +13,10 @@
 #   - .git, target, .idea    -> ruido de build/VCS/IDE
 #   - *.md, *.html (pasada 1) -> la documentacion menciona estos patrones como ejemplo
 #   - los scripts de escaneo -> contienen los patrones que buscan como cadenas
+#     (scan-repository.sh, validate-week1-scope.sh, verify-image-secrets.sh).
+#     Es un punto ciego asumido y acotado: son tres archivos concretos, revisables
+#     a mano, y la alternativa —ofuscar los patrones para que el escaner no se
+#     detecte a si mismo— haria el catalogo ilegible y fragil.
 # El escaneo profundo de secretos reales lo hace gitleaks en CI (capa 4).
 #
 set -euo pipefail
@@ -29,7 +33,8 @@ if grep -RInE "${PATTERNS}" . \
         --exclude='.env' \
         --exclude='*.env' \
         --exclude='scan-repository.sh' \
-        --exclude='validate-week1-scope.sh'; then
+        --exclude='validate-week1-scope.sh' \
+        --exclude='verify-image-secrets.sh'; then
     echo "ERROR: posible secreto o cadena de conexion detectada arriba." >&2
     exit 1
 fi

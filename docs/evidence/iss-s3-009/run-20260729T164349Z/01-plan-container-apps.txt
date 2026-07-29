@@ -1,0 +1,14 @@
+# Plan del entorno y de las reglas de escalado, sin crear nada
+# comando: bash scripts/provision-container-apps.sh --validate-only
+# ------------------------------------------------------------------
+[INFO]  Cargando parametros desde /c/Users/carlo/Desktop/Repositories/Centinela/scripts/lib/../../.env
+[INFO]  Parametros validados correctamente.
+[INFO]  Plan de ISS-S3-008:
+[INFO]    Entorno            : cae-cent
+[INFO]    Log Analytics      : log-cent
+[INFO]    API                : concurrencia=10 replicas=1..10
+[INFO]    Motor de scoring   : replicas=0..8
+[INFO]    Explicador         : replicas=0..3 (escala a cero)
+[INFO]  Modo --validate-only: no se crea nada.
+
+# RESULTADO: OK

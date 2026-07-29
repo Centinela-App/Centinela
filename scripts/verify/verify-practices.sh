@@ -40,16 +40,37 @@ fi
 # La instrumentacion tardia es el fallo que el enunciado advierte expresamente.
 # Esta comprobacion detecta una etapa declarada que nadie emite.
 note "Verificando que toda etapa declarada se emite en algun punto..."
+etapas_revisadas=0
 while read -r etapa; do
   [ -z "$etapa" ] && continue
-  usos="$(grep -rlF "PipelineStage.$etapa" src/main/java scoring-function/src/main/java 2>/dev/null | wc -l)"
-  emitido_en_motor="$(grep -rlF "stage=$etapa" scoring-function/src/main/java 2>/dev/null | wc -l)"
-  if [ "$usos" -le 1 ] && [ "$emitido_en_motor" -eq 0 ]; then
+  etapas_revisadas=$((etapas_revisadas + 1))
+  # El '|| true' no es cosmetico: con 'set -e' y 'pipefail', un grep sin
+  # coincidencias aborta el script entero. La comprobacion moriria en silencio
+  # justo cuando encuentra el hueco que busca — y el script terminaria sin
+  # reportarlo, que es la peor forma posible de fallar para un verificador.
+  usos="$(grep -rlF "PipelineStage.$etapa" src/main/java scoring-function/src/main/java 2>/dev/null | wc -l || true)"
+  emitido_en_motor="$(grep -rlF "stage=$etapa" scoring-function/src/main/java 2>/dev/null | wc -l || true)"
+  # Se busca 'PipelineStage.X', que solo aparece donde se USA: la declaracion en
+  # el enumerado es 'X,' a secas y no cuenta. Por eso el umbral es cero usos y no
+  # uno — con uno se descartaria como "solo la declaracion" un componente que si
+  # esta instrumentado, y el verificador reportaria huecos inexistentes.
+  if [ "$usos" -eq 0 ] && [ "$emitido_en_motor" -eq 0 ]; then
     problema "La etapa $etapa esta declarada pero nadie la emite: quedaria un hueco en la traza."
   else
     ok "etapa $etapa instrumentada"
   fi
-done < <(grep -oP '^\s{4}\K[A-Z_]+(?=,|;)' src/main/java/com/centinela/shared/telemetry/PipelineStage.java 2>/dev/null || true)
+  # sed portable en vez de grep -P: la extraccion con lookbehind no esta
+  # disponible en todos los grep, y fallaba en silencio — el bucle no se
+  # ejecutaba y la comprobacion daba OK sin haber comprobado nada, que es
+  # exactamente la clase de falso positivo que este script existe para evitar.
+done < <(sed -n 's/^    \([A-Z][A-Z_]*\)[,;].*/\1/p' \
+           src/main/java/com/centinela/shared/telemetry/PipelineStage.java 2>/dev/null || true)
+
+# Una comprobacion que no comprueba nada es peor que ninguna: da OK y crea
+# confianza infundada. Si no se extrajo ninguna etapa, el defecto esta aqui.
+if [ "$etapas_revisadas" -eq 0 ]; then
+  problema "No se pudo extraer ninguna etapa de PipelineStage.java: la comprobacion de instrumentacion no verifico nada."
+fi
 
 # --- 4. Migraciones de base de datos sin huecos -----------------------------
 note "Verificando la numeracion de las migraciones..."

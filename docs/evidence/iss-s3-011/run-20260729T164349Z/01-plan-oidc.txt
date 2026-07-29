@@ -1,0 +1,13 @@
+# Plan de la credencial federada, sin crear nada
+# comando: env CENTINELA_GITHUB_REPO=Centinela-App/Centinela bash scripts/provision-github-oidc.sh --validate-only
+# ------------------------------------------------------------------
+[INFO]  Cargando parametros desde /c/Users/carlo/Desktop/Repositories/Centinela/scripts/lib/../../.env
+[INFO]  Parametros validados correctamente.
+[INFO]  Plan de ISS-S3-010:
+[INFO]    Aplicacion       : app-cent-github-deploy
+[INFO]    Repositorio      : Centinela-App/Centinela
+[INFO]    Rama autorizada  : main
+[INFO]    Alcance del rol  : el grupo de recursos, NO la suscripcion
+[INFO]  Modo --validate-only: no se crea nada.
+
+# RESULTADO: OK

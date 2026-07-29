@@ -1,56 +1,21 @@
-#!/usr/bin/env bash
-#
-# scripts/verify/report-image-size.sh
-# Reporte de tamano de las imagenes, con el desglose por capa.
-#
-# Uso: report-image-size.sh <servidor-de-registro> <etiqueta>
-#
-# El tamano importa por dos razones concretas y no por estetica: cada arranque
-# en frio de una replica descarga la imagen —y el escalado bajo carga crea
-# replicas justo cuando la latencia ya esta sufriendo—, y el registro Basic
-# incluye 10 GiB, que se llenan antes de lo que parece con una imagen por commit.
+# Tamano y capas mas pesadas de las imagenes locales
+# comando: bash scripts/verify/report-image-size.sh  evidencia
+# ------------------------------------------------------------------
 
-set -euo pipefail
+IMAGEN                         TAMANO      CAPAS
+-------------------------------------------------
+centinela-api                  187 MB         10
+centinela-scoring              660 MB         20
 
-# El registro puede venir vacio: en ese caso se inspeccionan las imagenes locales,
-# que es lo que hay disponible antes de publicarlas por primera vez.
-REGISTRY="${1-}"
-TAG="${2:?Uso: report-image-size.sh <servidor-de-registro|''> <etiqueta>}"
-
-command -v docker >/dev/null 2>&1 || { echo "docker no disponible."; exit 0; }
-
-# referencia <nombre> -> "registro/nombre:etiqueta" o "nombre:etiqueta"
-referencia() {
-  if [ -n "$REGISTRY" ]; then
-    printf '%s/%s:%s' "$REGISTRY" "$1" "$TAG"
-  else
-    printf '%s:%s' "$1" "$TAG"
-  fi
-}
-
-imagenes=("centinela-api" "centinela-scoring")
-
-printf '\n%-24s %12s %10s\n' "IMAGEN" "TAMANO" "CAPAS"
-printf '%s\n' "-------------------------------------------------"
-
-for nombre in "${imagenes[@]}"; do
-  ref="$(referencia "$nombre")"
-  docker image inspect "$ref" >/dev/null 2>&1 || docker pull -q "$ref" >/dev/null 2>&1 || {
-    printf '%-24s %12s %10s\n' "$nombre" "no disponible" "-"
-    continue
-  }
-
-  bytes="$(docker image inspect "$ref" --format '{{.Size}}')"
-  megas="$(awk -v b="$bytes" 'BEGIN { printf "%.0f MB", b/1024/1024 }')"
-  capas="$(docker image inspect "$ref" --format '{{len .RootFS.Layers}}')"
-  printf '%-24s %12s %10s\n' "$nombre" "$megas" "$capas"
-done
-
-printf '\n%s\n' "Capas mas pesadas de centinela-api:"
-docker history --human --format '  {{.Size}}\t{{.CreatedBy}}' "$(referencia centinela-api)" 2>/dev/null \
-  | grep -v '0B' | head -8 || true
-
-cat <<'EOF'
+Capas mas pesadas de centinela-api:
+12.3kB	COPY --chown=centinela:centinela application…
+89.5MB	COPY --chown=centinela:centinela /build/appl…
+47.3MB	COPY --chown=centinela:centinela /agent/appl…
+8.19kB	WORKDIR /app
+41kB	RUN /bin/sh -c addgroup -S centinela && addu…
+12.3kB	COPY --chmod=755 entrypoint.sh /__cacert_ent…
+12.3kB	RUN /bin/sh -c set -eux;     echo "Verifying…
+165MB	RUN /bin/sh -c set -eux;     ARCH="$(apk --p…
 
 Medidas aplicadas para reducir el tamano
 ---------------------------------------
@@ -90,4 +55,5 @@ observable.
 Es un coste asumido a cambio de no rehacer un componente que funcionaba. Se
 mitiga con el hecho de que el motor escala desde cero replicas y sus descargas
 son poco frecuentes, no con un intento de adelgazar una imagen base ajena.
-EOF
+
+# RESULTADO: OK
