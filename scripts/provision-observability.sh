@@ -111,9 +111,22 @@ main() {
   log_info "    az monitor app-insights component show -g $RESOURCE_GROUP -a $insights_name --query connectionString -o tsv"
 }
 
+# Las dos extensiones se instalan por adelantado y en silencio. Si se dejan a la
+# instalacion automatica, az abre un prompt interactivo ("Do you want to install
+# it now?") que en una ejecucion desatendida no tiene quien lo conteste: el
+# comando se queda esperando y despues falla, con un mensaje que hace pensar en
+# un problema de permisos.
 ensure_extension() {
-  az extension show --name application-insights >/dev/null 2>&1 \
-    || az extension add --name application-insights --upgrade --only-show-errors --output none
+  local extension
+  for extension in application-insights scheduled-query; do
+    if az extension show --name "$extension" >/dev/null 2>&1; then
+      log_info "Extension '$extension' ya instalada."
+    else
+      log_info "Instalando extension '$extension' de Azure CLI..."
+      az extension add --name "$extension" --upgrade --only-show-errors --output none \
+        || die "No se pudo instalar la extension '$extension'."
+    fi
+  done
 }
 
 ensure_insights() {

@@ -152,15 +152,19 @@ assign_deployment_roles() {
   # seria un rol personalizado con las acciones de Microsoft.App; se documenta
   # como deuda consciente en vez de fingir que el minimo privilegio esta
   # completo aqui.
+  local fallos=0
   for role in "AcrPush" "Contributor"; do
     log_info "Asignando '$role' sobre el grupo de recursos..."
-    retry_until 8 5 az role assignment create \
-      --assignee-object-id "$principal_id" \
-      --assignee-principal-type ServicePrincipal \
-      --role "$role" \
-      --scope "$scope" \
-      --output none 2>/dev/null || log_info "  La asignacion ya existia."
+    # La identidad puede tardar unos segundos en propagarse tras crearse.
+    with_retry 5 assign_role "$role" "$principal_id" "$scope" || fallos=$((fallos + 1))
   done
+
+  if [ "$fallos" -gt 0 ]; then
+    log_warn "La identidad quedo creada pero SIN permisos de despliegue."
+    log_warn "El pipeline podra autenticarse y fallara al crear o actualizar recursos."
+    log_warn "Asignar manualmente desde el portal: Grupo de recursos -> Control de acceso (IAM)."
+    return 1
+  fi
 }
 
 print_github_configuration() {

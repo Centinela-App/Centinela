@@ -144,3 +144,93 @@ with_retry() {
   done
   return 0
 }
+
+# --- Asignacion de roles ---------------------------------------------------
+#
+# assign_role <rol> <principal-object-id> <scope>
+#
+# Asigna un rol usando la API REST de ARM en lugar de 'az role assignment create'.
+#
+# POR QUE NO SE USA EL COMANDO DE LA CLI
+# --------------------------------------
+# En algunas suscripciones —observado en una suscripcion nueva con cuenta
+# Microsoft personal sobre un directorio predeterminado— TODAS las operaciones
+# de 'az role assignment', incluido el simple 'list', fallan con:
+#
+#   (MissingSubscription) The request did not have a subscription or a valid
+#   tenant level resource provider
+#
+# El mensaje sugiere un problema de suscripcion o de permisos y no es ninguno de
+# los dos: la misma operacion contra la API REST funciona sin cambios. Es un
+# defecto del comando de la CLI. Diagnosticarlo cuesta una tarde porque el error
+# apunta en la direccion equivocada.
+#
+# Se usa REST como camino unico y no como respaldo: un respaldo que casi siempre
+# se activa es el camino principal disfrazado, y tener dos rutas duplica lo que
+# hay que probar.
+#
+# Devuelve 0 si el rol queda asignado o ya lo estaba; 1 en cualquier otro caso,
+# imprimiendo el error real de Azure. NO enmascara fallos como "ya existia":
+# tratar ambos casos igual es como se construye una comprobacion que miente.
+assign_role() {
+  local role_name="$1" principal_id="$2" scope="$3"
+
+  local subscription_id
+  subscription_id="$(az account show --query id -o tsv 2>/dev/null)" \
+    || { log_error "No hay sesion de Azure activa."; return 1; }
+
+  local role_id
+  role_id="$(az role definition list --name "$role_name" --query '[0].name' -o tsv 2>/dev/null)"
+  if [ -z "$role_id" ] || [ "$role_id" = "null" ]; then
+    log_error "No se encontro la definicion del rol '$role_name'."
+    return 1
+  fi
+
+  # El nombre de la asignacion debe ser un GUID unico. Si ya existe una
+  # asignacion equivalente, Azure responde RoleAssignmentExists y ese caso se
+  # trata como exito.
+  local assignment_id
+  assignment_id="$(python -c 'import uuid; print(uuid.uuid4())' 2>/dev/null)"
+  [ -n "$assignment_id" ] || assignment_id="$(cat /proc/sys/kernel/random/uuid 2>/dev/null)"
+  [ -n "$assignment_id" ] || {
+    log_error "No se pudo generar un identificador para la asignacion."
+    return 1
+  }
+
+  local body salida codigo
+  body="$(printf '{"properties":{"roleDefinitionId":"/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s","principalId":"%s","principalType":"ServicePrincipal"}}' \
+    "$subscription_id" "$role_id" "$principal_id")"
+
+  salida="$(az rest --method put \
+    --url "https://management.azure.com${scope}/providers/Microsoft.Authorization/roleAssignments/${assignment_id}?api-version=2022-04-01" \
+    --body "$body" --output none 2>&1)"
+  codigo=$?
+
+  if [ "$codigo" -eq 0 ]; then
+    log_info "  Rol '$role_name' asignado."
+    return 0
+  fi
+
+  if printf '%s' "$salida" | grep -qi "RoleAssignmentExists\|already exists"; then
+    log_info "  El rol '$role_name' ya estaba asignado."
+    return 0
+  fi
+
+  log_error "  No se pudo asignar '$role_name'. Error real de Azure:"
+  printf '%s\n' "$salida" | head -4 >&2
+  return 1
+}
+
+# role_assignment_count <scope> <rol> -> cuantas asignaciones de ese rol hay.
+# Tambien por REST, por el mismo motivo que assign_role.
+role_assignment_count() {
+  local scope="$1" role_name="$2"
+  local role_id
+  role_id="$(az role definition list --name "$role_name" --query '[0].name' -o tsv 2>/dev/null)"
+  [ -n "$role_id" ] || { echo 0; return; }
+
+  az rest --method get \
+    --url "https://management.azure.com${scope}/providers/Microsoft.Authorization/roleAssignments?api-version=2022-04-01" \
+    --query "value[?contains(properties.roleDefinitionId, '${role_id}')] | length(@)" \
+    -o tsv 2>/dev/null || echo 0
+}

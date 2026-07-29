@@ -83,6 +83,7 @@ main() {
   az group show --name "$RESOURCE_GROUP" >/dev/null 2>&1 \
     || die "Resource Group '$RESOURCE_GROUP' no existe. Despliega primero las semanas 1 y 2."
 
+  ensure_providers
   create_registry "$registry_name"
   local identity_principal identity_id
   identity_principal="$(create_pull_identity "$identity_name")"
@@ -95,6 +96,27 @@ main() {
   log_info "ISS-S3-007 OK"
   log_info "  ACR_LOGIN_SERVER=$(az acr show -n "$registry_name" -g "$RESOURCE_GROUP" --query loginServer -o tsv)"
   log_info "  ACR_PULL_IDENTITY_ID=$identity_id"
+}
+
+# Una suscripcion nueva no tiene registrados los proveedores de recursos que no
+# ha usado nunca. El error que devuelve Azure —MissingSubscriptionRegistration—
+# no menciona que se resuelve con un solo comando, asi que sin esto el script
+# falla de una forma que parece un problema de permisos y no lo es.
+# El registro es idempotente y a nivel de suscripcion: reejecutarlo no hace nada.
+ensure_providers() {
+  local provider="Microsoft.ContainerRegistry"
+  local estado
+  estado="$(az provider show --namespace "$provider" --query registrationState -o tsv 2>/dev/null || echo "NotRegistered")"
+
+  if [ "$estado" = "Registered" ]; then
+    log_info "Proveedor $provider ya registrado."
+    return
+  fi
+
+  log_info "Registrando el proveedor $provider (puede tardar un minuto)..."
+  az provider register --namespace "$provider" --wait --only-show-errors \
+    || die "No se pudo registrar $provider. Requiere permisos de colaborador sobre la suscripcion."
+  log_info "Proveedor $provider registrado."
 }
 
 create_registry() {
@@ -134,15 +156,13 @@ assign_pull_role() {
   local scope
   scope="$(az acr show --name "$registry_name" --resource-group "$RESOURCE_GROUP" --query id -o tsv)"
 
-  # La propagacion de una identidad recien creada tarda; sin reintento la
-  # asignacion falla de forma intermitente y el script parece inestable.
+  # La propagacion de una identidad recien creada tarda unos segundos; sin
+  # reintento la asignacion falla de forma intermitente y el script parece
+  # inestable. 'assign_role' usa la API REST por el motivo documentado en
+  # lib/common.sh.
   log_info "Asignando $ACR_PULL_ROLE sobre el registro..."
-  retry_until 10 6 az role assignment create \
-    --assignee-object-id "$principal_id" \
-    --assignee-principal-type ServicePrincipal \
-    --role "$ACR_PULL_ROLE" \
-    --scope "$scope" \
-    --output none 2>/dev/null || log_info "La asignacion ya existia."
+  with_retry 5 assign_role "$ACR_PULL_ROLE" "$principal_id" "$scope" \
+    || die "Sin este rol, Container Apps no puede descargar imagenes del registro sin credenciales."
 }
 
 verify() {
@@ -155,7 +175,7 @@ verify() {
 
   local scope role_count
   scope="$(az acr show --name "$registry_name" --resource-group "$RESOURCE_GROUP" --query id -o tsv)"
-  role_count="$(az role assignment list --scope "$scope" --query "length([?roleDefinitionName=='$ACR_PULL_ROLE'])" -o tsv)"
+  role_count="$(role_assignment_count "$scope" "$ACR_PULL_ROLE")"
   [ "${role_count:-0}" -ge 1 ] || die "No hay ninguna asignacion $ACR_PULL_ROLE sobre el registro."
 
   az identity show --name "$identity_name" --resource-group "$RESOURCE_GROUP" >/dev/null \

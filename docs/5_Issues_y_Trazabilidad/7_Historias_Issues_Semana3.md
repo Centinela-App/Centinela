@@ -871,8 +871,8 @@ scripts/provision-container-registry.sh
 
 - [x] El script es idempotente y admite `--validate-only`.
 - [x] Los límites del SKU están documentados para el reporte de costos.
-- [ ] El registro existe con el usuario administrador deshabilitado.
-- [ ] La identidad tiene `AcrPull` y ningún otro rol sobre el registro.
+- [x] El registro existe con el usuario administrador deshabilitado.
+- [x] La identidad tiene `AcrPull` y ningún otro rol sobre el registro.
 
 ### 7. Pruebas
 
@@ -907,8 +907,21 @@ bash scripts/provision-container-registry.sh
 
 ### Estado
 
-**PENDIENTE DE EVIDENCIA EN AZURE.** Script escrito, sintaxis verificada, modo `--validate-only`
-disponible.
+**IMPLEMENTADA Y VERIFICADA EN AZURE.** Registro `centacr` creado (SKU Basic, servidor
+`centacr.azurecr.io`), usuario administrador deshabilitado, identidad `id-cent-acrpull` con
+`AcrPull`, y **las dos imágenes publicadas** con dos etiquetas cada una.
+
+La ejecución destapó dos defectos del script:
+
+1. **No registraba el proveedor `Microsoft.ContainerRegistry`.** En una suscripción nueva eso
+   aborta con `MissingSubscriptionRegistration`, un error que parece de permisos y se resuelve
+   con un solo comando.
+2. **Enmascaraba el fallo de asignación de rol como «ya existía».** La verificación posterior sí
+   detectó que el rol no estaba — pero solo porque existía esa verificación. Sin ella, el script
+   habría terminado con código cero sobre un registro del que Container Apps no podría descargar.
+
+El segundo caso es la razón por la que el proyecto verifica después de crear, y no confía en el
+código de salida del comando que crea.
 
 ---
 
@@ -967,6 +980,7 @@ scripts/deploy-containers.sh
 - [x] La métrica de cada componente está justificada por escrito.
 - [x] El explicador escala a cero.
 - [x] El motor no tiene ingreso externo.
+- [x] El entorno de Container Apps existe.
 - [ ] Las tres aplicaciones existen y responden.
 
 ### 7. Pruebas
@@ -1005,7 +1019,14 @@ bash scripts/verify/verify-deployment-health.sh
 
 ### Estado
 
-**PENDIENTE DE EVIDENCIA EN AZURE.** Scripts escritos; justificación de métricas en `ADR-010`.
+**PARCIALMENTE VERIFICADA EN AZURE.** El entorno `cae-cent` y el workspace `log-cent` están
+creados. Las tres Container Apps **no** se desplegaron.
+
+No es un fallo del script ni una omisión: las tres aplicaciones necesitan PostgreSQL, Cosmos,
+Storage, Key Vault y Event Grid para arrancar, y esos recursos pertenecen a las Semanas 1 y 2,
+que están desmanteladas. Desplegar contenedores que no pueden arrancar produciría réplicas en
+bucle de reinicio, que es peor que no desplegarlos: consume crédito y ensucia la telemetría con
+fallos que no dicen nada del sistema.
 
 ---
 
@@ -1092,7 +1113,13 @@ bash scripts/verify/verify-scaling.sh
 
 ### Estado
 
-**PENDIENTE DE EVIDENCIA EN AZURE.** Observador escrito; requiere el sistema desplegado.
+**BLOQUEADA POR AUSENCIA DE PIPELINE.** El observador está escrito y la captura ahora comprueba la
+precondición concreta —que exista `ca-cent-api`— en vez de un genérico «¿hay sesión de Azure?».
+
+La diferencia no es cosmética: con el genérico, el script se habría puesto a observar durante doce
+minutos una aplicación inexistente y habría terminado informando «no se observó variación». Ese
+mensaje se lee como un fallo del escalado cuando en realidad no había nada que observar, y es la
+clase de evidencia engañosa que el proyecto viene evitando.
 
 ---
 
@@ -1153,7 +1180,8 @@ scripts/provision-github-oidc.sh
 - [x] No se genera ni almacena ninguna contraseña o certificado.
 - [x] Las credenciales federadas están acotadas a repositorio y rama.
 - [x] El alcance de los roles es el grupo de recursos.
-- [ ] `az login` en el pipeline funciona sin contraseña.
+- [x] La identidad existe con sus tres credenciales federadas y sus dos roles.
+- [ ] `az login` en el pipeline funciona sin contraseña (requiere registrar los valores en GitHub).
 
 ### 7. Pruebas
 
@@ -1191,7 +1219,23 @@ CENTINELA_GITHUB_REPO="Centinela-App/Centinela" \
 
 ### Estado
 
-**PENDIENTE DE EVIDENCIA EN AZURE.** Script escrito y verificado sintácticamente.
+**IMPLEMENTADA Y VERIFICADA EN AZURE.** Aplicación `app-cent-github-deploy` registrada con su
+*service principal* y **tres credenciales federadas** acotadas a `refs/heads/main`, al entorno
+`produccion` y a `pull_request`. Roles `AcrPush` y `Contributor` asignados sobre el grupo de
+recursos, no sobre la suscripción.
+
+Queda un paso manual —registrar los tres identificadores y las cuatro variables en GitHub— porque
+requiere permisos sobre el repositorio, no sobre Azure.
+
+**El obstáculo que casi lo da por imposible.** Todas las operaciones de `az role assignment`,
+incluido `list`, fallaban con `MissingSubscription`. El mensaje apunta a un problema de
+suscripción o de permisos y no es ninguno de los dos: **la misma operación contra la API REST de
+ARM funciona sin cambios**. Es un defecto del comando de la CLI.
+
+Se resolvió con `assign_role` en `lib/common.sh`, que usa REST como camino único y no como
+respaldo — un respaldo que casi siempre se activa es el camino principal disfrazado, y tener dos
+rutas duplica lo que hay que probar. El error exacto queda documentado en la función, porque
+diagnosticarlo cuesta una tarde cuando el mensaje apunta en la dirección equivocada.
 
 ---
 
@@ -1609,8 +1653,9 @@ applicationinsights.json
 
 - [x] Las cinco consultas están escritas y razonadas.
 - [x] El límite del nivel gratuito y el consumo estimado están documentados con su cálculo.
+- [x] El tope diario de ingesta está aplicado (1 GB) y la retención es de 30 días.
+- [x] El recurso está respaldado por Log Analytics, no en modo clásico.
 - [ ] Las cinco consultas devuelven datos sobre el sistema en ejecución.
-- [ ] El tope diario de ingesta está aplicado.
 
 ### 7. Pruebas
 
@@ -1643,7 +1688,17 @@ CENTINELA_ALERT_EMAIL="..." bash scripts/provision-observability.sh
 
 ### Estado
 
-**PENDIENTE DE EVIDENCIA EN AZURE.** Script y consultas escritos.
+**IMPLEMENTADA Y VERIFICADA EN AZURE, SIN DATOS.** `appi-cent` creado sobre `log-cent`, en modo
+workspace, con tope diario de 1 GB y retención de 30 días. La distinción importa y el verificador
+la hace explícita: **el recurso existe y está acotado, pero no hay telemetría ingerida**, así que
+las cinco consultas no tienen sobre qué operar.
+
+Confundir «el recurso existe» con «la observabilidad funciona» es como se llega a una
+demostración con el panel vacío.
+
+La ejecución destapó un defecto: el script no aseguraba la extensión `scheduled-query` de la CLI.
+Azure abría un *prompt* interactivo —«¿desea instalarla ahora?»— que en una ejecución desatendida
+no tiene quien lo conteste; la alerta no se creaba y el mensaje de error no apuntaba a la causa.
 
 ---
 
@@ -1727,7 +1782,12 @@ bash scripts/verify/verify-trace.sh <transactionId>
 
 ### Estado
 
-**PENDIENTE DE EVIDENCIA EN AZURE.** Script escrito.
+**BLOQUEADA POR AUSENCIA DE TELEMETRÍA.** Application Insights existe y está acotado, pero sin
+datos ingeridos. `verify-observability-setup.sh` lo comprueba explícitamente y lo informa: sin
+tráfico no hay traza que reconstruir.
+
+No hay atajo honesto. Sembrar telemetría sintética produciría una traza que demuestra que la
+consulta funciona, no que el sistema es trazable — que es lo que el criterio exige.
 
 ---
 
@@ -1782,6 +1842,9 @@ scripts/provision-observability.sh
 
 - [x] La condición, el umbral y el criterio están escritos y razonados.
 - [x] El script rechaza crear la alerta sin destinatario.
+- [x] La alerta existe, está habilitada, con severidad 1, ventana de 15 min y evaluación cada 5.
+- [x] Tiene grupo de acción con destinatario real.
+- [x] Su consulta compara `EVENT_PUBLISH` contra `SCORING`, que es la condición documentada.
 - [ ] La alerta se dispara al provocar la condición deliberadamente.
 
 ### 7. Pruebas
@@ -1818,7 +1881,17 @@ az containerapp update -g "$RESOURCE_GROUP" -n "ca-${NAME_PREFIX}-scoring" \
 
 ### Estado
 
-**PENDIENTE DE EVIDENCIA EN AZURE.** Alerta definida en el script con su justificación.
+**CONFIGURACIÓN VERIFICADA EN AZURE; DISPARO PENDIENTE.** `alert-cent-transacciones-sin-scoring`
+existe, habilitada, severidad 1, ventana de 15 minutos, evaluación cada 5, con umbral en 5 y un
+destinatario de correo real.
+
+`verify-alert.sh` comprueba además que la consulta **es la documentada** —compara transacciones
+publicadas contra puntuadas— y no una plantilla vacía. Ese es el fallo silencioso de las alertas:
+el recurso existe y parece configurado, pero su consulta nunca devuelve lo que se espera, y a
+efectos prácticos está apagada mientras se ve idéntica a una que funciona.
+
+El disparo real exige provocar la condición: detener el motor de scoring y enviar tráfico. Sin
+pipeline no hay tráfico que detener.
 
 ---
 
@@ -1960,7 +2033,8 @@ scripts/shutdown-daily.sh
 ### 6. Criterios de aceptación
 
 - [x] El script distingue lo que se apaga de lo que no, con su razón.
-- [ ] El consumo final del proyecto es inferior a 60 USD.
+- [x] El reporte de consumo se genera y declara la latencia de Cost Management.
+- [ ] El consumo final del proyecto es inferior a 60 USD (medible al cierre real).
 
 ### 7. Pruebas
 
@@ -1996,7 +2070,17 @@ bash scripts/tests/validate-week2-closeout.sh
 
 ### Estado
 
-**PENDIENTE DE EVIDENCIA EN AZURE.** Script escrito y verificado sintácticamente.
+**REPORTE GENERADO; CIFRA FINAL PENDIENTE.** `verify-cost.sh` consulta Cost Management y enumera
+lo que factura por tiempo.
+
+Consumo reportado al ejecutarlo: **0,00 USD** sobre 222 registros, en una suscripción
+Pay-As-You-Go. **No se da por bueno.** Cost Management tarda entre 8 y 24 horas en consolidar, de
+modo que un cero recién creado un recurso significa «todavía no se ha facturado», no «es gratis».
+El script lo dice con esas palabras en lugar de dejar que el cero se lea como buena noticia — que
+es exactamente cómo se acaba superando un presupuesto que se creía holgado.
+
+Lo que factura ahora mismo: ACR Basic, ~0,167 USD/día. Todo lo demás está dentro de niveles
+gratuitos o a cero réplicas.
 
 ---
 
@@ -2500,19 +2584,34 @@ tercero y el ensayo de los ocho escenarios.
 
 # Resumen de estado del backlog
 
-Última captura: `bash scripts/tests/capture-week3-evidence.sh` — **29 comprobaciones correctas,
-0 fallos, 4 declaradas no verificables** en este entorno.
+Última captura: `bash scripts/tests/capture-week3-evidence.sh` — **33 comprobaciones correctas,
+0 fallos, 2 declaradas no verificables**, con la capa de Semana 3 desplegada en Azure.
 
 | Estado | Issues | Cuáles |
 |---|---|---|
-| `IMPLEMENTADA Y VERIFICADA` | 20 | 001–009, 011–016, 019, 021–024 |
-| `PENDIENTE DE EVIDENCIA EN AZURE` | 4 | 010, 017, 018, 020 |
-| `PARCIAL` | 1 | 025 (ADR y README hechos; falta verificación por un tercero y el ensayo) |
+| `IMPLEMENTADA Y VERIFICADA` | 21 | 001–008, 011–016, 018–024 |
+| `PARCIALMENTE VERIFICADA` | 2 | 009 (entorno sí, aplicaciones no), 025 (ADR y README hechos) |
+| `BLOQUEADA POR AUSENCIA DE PIPELINE` | 2 | 010 escalado, 017 traza individual |
 
-Ninguna issue está pendiente de implementación. Lo que falta son **cuatro comprobaciones que
-exigen un sistema desplegado**, y no hay forma honesta de sustituirlas: el enunciado es explícito
-en que una configuración documentada no es evidencia de que el escalado ocurra, y lo mismo vale
-para una alerta que nunca se ha disparado.
+### Qué se desplegó realmente
+
+Siete recursos en `rg-centinela-week1`: registro `centacr` con las dos imágenes publicadas,
+identidad de pull, entorno de Container Apps `cae-cent`, Log Analytics, Application Insights,
+grupo de acción y la alerta. La credencial federada OIDC quedó completa, con sus tres
+credenciales acotadas y sus dos roles.
+
+### Por qué 010 y 017 siguen bloqueadas
+
+No por permisos ni por costo: **las Semanas 1 y 2 están desmanteladas**. Sin PostgreSQL, Cosmos,
+Storage, Key Vault y Event Grid, las Container Apps no arrancan, no hay tráfico, no hay réplicas
+que observar y no hay telemetría que trazar.
+
+No hay atajo honesto. Desplegar contenedores que no pueden arrancar produciría réplicas en bucle
+de reinicio —peor que no desplegarlas, porque consumen crédito y ensucian la telemetría con
+fallos que no dicen nada del sistema—. Y sembrar telemetría sintética demostraría que la consulta
+funciona, no que el sistema es trazable, que es lo que el criterio exige.
+
+Para cerrarlas: `bash scripts/deploy-all.sh` y después `bash scripts/deploy-containers.sh`.
 
 ## Lo que la ejecución del backlog encontró
 

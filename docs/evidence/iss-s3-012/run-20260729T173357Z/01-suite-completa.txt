@@ -1,0 +1,149 @@
+# Lo que el pipeline de CI ejecuta: suite del modulo principal
+# comando: mvn -B -ntp test
+# ------------------------------------------------------------------
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ----------------------< com.centinela:centinela >-----------------------
+[INFO] Building centinela 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ centinela ---
+[INFO] Copying 2 resources from src\main\resources to target\classes
+[INFO] Copying 4 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ centinela ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ centinela ---
+[INFO] Copying 1 resource from src\test\resources to target\test-classes
+[INFO] 
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ centinela ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.2:test (default-test) @ centinela ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.centinela.caseexplanation.application.service.GenerateCaseExplanationServiceTest
+Mockito is currently self-attaching to enable the inline-mock-maker. This will no longer work in future releases of the JDK. Please add Mockito as an agent to your build what is described in Mockito's documentation: https://javadoc.io/doc/org.mockito/mockito-core/latest/org/mockito/Mockito.html#0.3
+WARNING: A Java agent has been loaded dynamically (C:\Users\carlo\.m2\repository\net\bytebuddy\byte-buddy-agent\1.15.11\byte-buddy-agent-1.15.11.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+12:38:26.901 [main] INFO centinela.pipeline -- stage=EXPLANATION transactionId=tx-001 traceId=4bf92f3577b34da6a3ce929d0e0e4736 durationMs=18 outcome=SUCCESS
+12:38:26.908 [main] INFO com.centinela.caseexplanation.application.service.GenerateCaseExplanationService -- explanation generated caseId=1 transactionId=tx-001 traceparent=00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+12:38:26.908 [main] INFO com.centinela.caseexplanation.application.service.GenerateCaseExplanationService -- explainer batch processed pending=1 generated=1
+12:38:26.916 [main] INFO centinela.pipeline -- stage=EXPLANATION transactionId=tx-001 traceId=4bf92f3577b34da6a3ce929d0e0e4736 durationMs=0 outcome=SUCCESS
+12:38:26.917 [main] INFO com.centinela.caseexplanation.application.service.GenerateCaseExplanationService -- explanation generated caseId=1 transactionId=tx-001 traceparent=00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+12:38:26.918 [main] INFO centinela.pipeline -- stage=EXPLANATION transactionId=tx-002 traceId=4bf92f3577b34da6a3ce929d0e0e4736 durationMs=0 outcome=SUCCESS
+12:38:26.918 [main] INFO com.centinela.caseexplanation.application.service.GenerateCaseExplanationService -- explanation generated caseId=2 transactionId=tx-002 traceparent=00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+12:38:26.919 [main] INFO centinela.pipeline -- stage=EXPLANATION transactionId=tx-003 traceId=4bf92f3577b34da6a3ce929d0e0e4736 durationMs=0 outcome=SUCCESS
+12:38:26.919 [main] INFO com.centinela.caseexplanation.application.service.GenerateCaseExplanationService -- explanation generated caseId=3 transactionId=tx-003 traceparent=00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+12:38:26.919 [main] INFO com.centinela.caseexplanation.application.service.GenerateCaseExplanationService -- explainer batch processed pending=3 generated=3
+12:38:26.929 [main] ERROR com.centinela.caseexplanation.application.service.GenerateCaseExplanationService -- explanation failed caseId=1 transactionId=tx-001 attempt=1 reason=El motor no registro ninguna regla activada para la transaccion tx-001: no hay nada que explicar sin inventarlo.
+12:38:26.930 [main] INFO centinela.pipeline -- stage=EXPLANATION transactionId=tx-001 traceId=4bf92f3577b34da6a3ce929d0e0e4736 durationMs=1 outcome=FAILURE reason="El motor no registro ninguna regla activada para la transaccion tx-001: no hay nada que explicar sin inventarlo."
+12:38:26.930 [main] INFO com.centinela.caseexplanation.application.service.GenerateCaseExplanationService -- explainer batch processed pending=1 generated=0
+12:38:26.936 [main] INFO centinela.pipeline -- stage=EXPLANATION transactionId=tx-broken traceId=4bf92f3577b34da6a3ce929d0e0e4736 durationMs=0 outcome=FAILURE reason="No se encontro el registro de scoring de la transaccion tx-broken"
+12:38:26.937 [main] INFO centinela.pipeline -- stage=EXPLANATION transactionId=tx-ok traceId=4bf92f3577b34da6a3ce929d0e0e4736 durationMs=0 outcome=SUCCESS
+12:38:26.937 [main] INFO com.centinela.caseexplanation.application.service.GenerateCaseExplanationService -- explanation generated caseId=2 transactionId=tx-ok traceparent=00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+12:38:26.937 [main] INFO com.centinela.caseexplanation.application.service.GenerateCaseExplanationService -- explainer batch processed pending=2 generated=1
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.409 s -- in com.centinela.caseexplanation.application.service.GenerateCaseExplanationServiceTest
+[INFO] Running com.centinela.caseexplanation.domain.explanation.ExplanationTemplateTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.072 s -- in com.centinela.caseexplanation.domain.explanation.ExplanationTemplateTest
+[INFO] Running com.centinela.caseinquiry.infrastructure.web.CaseInquiryControllerTest
+Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+12:38:27.427 [main] INFO org.hibernate.validator.internal.util.Version -- HV000001: Hibernate Validator 8.0.2.Final
+12:38:28.624 [main] INFO org.springframework.mock.web.MockServletContext -- Initializing Spring TestDispatcherServlet ''
+12:38:28.624 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Initializing Servlet ''
+12:38:28.631 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Completed initialization in 5 ms
+12:38:28.945 [main] INFO org.springframework.mock.web.MockServletContext -- Initializing Spring TestDispatcherServlet ''
+12:38:28.946 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Initializing Servlet ''
+12:38:28.946 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Completed initialization in 0 ms
+12:38:28.979 [main] INFO org.springframework.mock.web.MockServletContext -- Initializing Spring TestDispatcherServlet ''
+12:38:28.979 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Initializing Servlet ''
+12:38:28.979 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Completed initialization in 0 ms
+12:38:29.001 [main] INFO org.springframework.mock.web.MockServletContext -- Initializing Spring TestDispatcherServlet ''
+12:38:29.002 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Initializing Servlet ''
+12:38:29.002 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Completed initialization in 0 ms
+12:38:29.062 [main] INFO org.springframework.mock.web.MockServletContext -- Initializing Spring TestDispatcherServlet ''
+12:38:29.063 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Initializing Servlet ''
+12:38:29.063 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Completed initialization in 0 ms
+12:38:29.097 [main] INFO org.springframework.mock.web.MockServletContext -- Initializing Spring TestDispatcherServlet ''
+12:38:29.098 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Initializing Servlet ''
+12:38:29.098 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Completed initialization in 0 ms
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.083 s -- in com.centinela.caseinquiry.infrastructure.web.CaseInquiryControllerTest
+[INFO] Running com.centinela.casemanagement.application.service.OpenCaseServiceTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.061 s -- in com.centinela.casemanagement.application.service.OpenCaseServiceTest
+[INFO] Running com.centinela.casemanagement.infrastructure.messaging.AzureStorageQueueAdapterTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.371 s -- in com.centinela.casemanagement.infrastructure.messaging.AzureStorageQueueAdapterTest
+[INFO] Running com.centinela.documentstorage.application.StoreVerificationDocumentServiceTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.144 s -- in com.centinela.documentstorage.application.StoreVerificationDocumentServiceTest
+[INFO] Running com.centinela.documentstorage.contract.VerificationDocumentOpenApiContractTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.154 s -- in com.centinela.documentstorage.contract.VerificationDocumentOpenApiContractTest
+[INFO] Running com.centinela.documentverification.infrastructure.extraction.TextualIdentityDataExtractorTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.116 s -- in com.centinela.documentverification.infrastructure.extraction.TextualIdentityDataExtractorTest
+[INFO] Running com.centinela.identityaccess.EndpointAuthorizationTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.048 s -- in com.centinela.identityaccess.EndpointAuthorizationTest
+[INFO] Running com.centinela.shared.event.EventContractTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.056 s -- in com.centinela.shared.event.EventContractTest
+[INFO] Running com.centinela.shared.web.RateLimitingFilterTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.035 s -- in com.centinela.shared.web.RateLimitingFilterTest
+[INFO] Running com.centinela.transactioningestion.application.service.IngestPublishesEventTest
+12:38:30.148 [main] INFO centinela.pipeline -- stage=RAW_PERSIST transactionId=tx-1001 traceId=28e55b3c6f020f5056af357699edd9cb durationMs=0 outcome=SUCCESS
+12:38:30.148 [main] INFO centinela.pipeline -- stage=EVENT_PUBLISH transactionId=tx-1001 traceId=28e55b3c6f020f5056af357699edd9cb durationMs=0 outcome=SUCCESS
+12:38:30.154 [main] INFO centinela.pipeline -- stage=RAW_PERSIST transactionId=tx-1001 traceId=4215fa36c4858e45edc207affc0012f5 durationMs=0 outcome=SUCCESS
+12:38:30.155 [main] INFO centinela.pipeline -- stage=EVENT_PUBLISH transactionId=tx-1001 traceId=4215fa36c4858e45edc207affc0012f5 durationMs=0 outcome=FAILURE reason="event grid unavailable"
+12:38:30.162 [main] INFO centinela.pipeline -- stage=RAW_PERSIST transactionId=tx-1001 traceId=bc1eb5f72dac42f88fb8e38692660292 durationMs=1 outcome=FAILURE reason="storage down"
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.028 s -- in com.centinela.transactioningestion.application.service.IngestPublishesEventTest
+[INFO] Running com.centinela.transactioningestion.application.service.IngestTransactionServiceTest
+12:38:30.180 [main] INFO centinela.pipeline -- stage=RAW_PERSIST transactionId=tx-1001 traceId=0cc2c9636fa7d16e28268b8ab7f3944b durationMs=0 outcome=FAILURE reason="storage unavailable"
+12:38:30.184 [main] INFO centinela.pipeline -- stage=RAW_PERSIST transactionId=tx-1001 traceId=e27a48db4cca61b4fae8d2f57d2cd5b4 durationMs=0 outcome=SUCCESS
+12:38:30.184 [main] INFO centinela.pipeline -- stage=EVENT_PUBLISH transactionId=tx-1001 traceId=e27a48db4cca61b4fae8d2f57d2cd5b4 durationMs=0 outcome=SUCCESS
+12:38:30.187 [main] INFO centinela.pipeline -- stage=RAW_PERSIST transactionId=tx-1001 traceId=6e5850856879d58122d2a78f868f57d9 durationMs=0 outcome=SUCCESS
+12:38:30.187 [main] INFO centinela.pipeline -- stage=EVENT_PUBLISH transactionId=tx-1001 traceId=6e5850856879d58122d2a78f868f57d9 durationMs=0 outcome=SUCCESS
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.019 s -- in com.centinela.transactioningestion.application.service.IngestTransactionServiceTest
+[INFO] Running com.centinela.transactioningestion.contract.OpenApiContractTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.048 s -- in com.centinela.transactioningestion.contract.OpenApiContractTest
+[INFO] Running com.centinela.transactioningestion.infrastructure.web.dto.TransactionRequestValidationTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.288 s -- in com.centinela.transactioningestion.infrastructure.web.dto.TransactionRequestValidationTest
+[INFO] Running com.centinela.transactioningestion.infrastructure.web.TransactionControllerValidationTest
+12:38:30.614 [main] INFO org.springframework.mock.web.MockServletContext -- Initializing Spring TestDispatcherServlet ''
+12:38:30.614 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Initializing Servlet ''
+12:38:30.614 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Completed initialization in 0 ms
+12:38:30.620 [main] WARN org.springframework.web.servlet.mvc.support.DefaultHandlerExceptionResolver -- Resolved [org.springframework.web.HttpMediaTypeNotSupportedException: Content-Type 'text/plain' is not supported]
+12:38:30.636 [main] INFO org.springframework.mock.web.MockServletContext -- Initializing Spring TestDispatcherServlet ''
+12:38:30.636 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Initializing Servlet ''
+12:38:30.636 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Completed initialization in 0 ms
+12:38:30.833 [main] INFO org.springframework.mock.web.MockServletContext -- Initializing Spring TestDispatcherServlet ''
+12:38:30.834 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Initializing Servlet ''
+12:38:30.834 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Completed initialization in 0 ms
+12:38:30.859 [main] INFO org.springframework.mock.web.MockServletContext -- Initializing Spring TestDispatcherServlet ''
+12:38:30.859 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Initializing Servlet ''
+12:38:30.859 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Completed initialization in 0 ms
+12:38:30.881 [main] INFO org.springframework.mock.web.MockServletContext -- Initializing Spring TestDispatcherServlet ''
+12:38:30.883 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Initializing Servlet ''
+12:38:30.883 [main] INFO org.springframework.test.web.servlet.TestDispatcherServlet -- Completed initialization in 0 ms
+12:38:30.909 [main] INFO centinela.pipeline -- stage=INGEST_API transactionId=tx-1001 traceId=081e78b589bef262ff49218f80c7133f durationMs=0 outcome=SUCCESS
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.410 s -- in com.centinela.transactioningestion.infrastructure.web.TransactionControllerValidationTest
+[INFO] Running com.centinela.transactioningestion.infrastructure.web.TransactionWebMapperTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.centinela.transactioningestion.infrastructure.web.TransactionWebMapperTest
+[INFO] Running com.centinela.architecture.ArchitectureConventionsTest
+12:38:30.992 [main] INFO com.tngtech.archunit.core.PluginLoader -- Detected Java version 21.0.10
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.862 s -- in com.centinela.architecture.ArchitectureConventionsTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 86, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  20.023 s
+[INFO] Finished at: 2026-07-29T12:38:35-05:00
+[INFO] ------------------------------------------------------------------------
+
+# RESULTADO: OK

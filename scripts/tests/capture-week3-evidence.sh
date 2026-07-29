@@ -20,6 +20,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
+# Los parametros se cargan aqui porque varias precondiciones dependen de
+# RESOURCE_GROUP y NAME_PREFIX para saber que recurso comprobar.
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
 SELLO="$(date -u +%Y%m%dT%H%M%SZ)"
 COMMIT="$(git rev-parse HEAD 2>/dev/null || echo 'sin-commit')"
 RAMA="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'sin-rama')"
@@ -92,6 +101,18 @@ saltar() {
 
 hay_docker() { command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; }
 hay_azure()  { command -v az >/dev/null 2>&1 && az account show >/dev/null 2>&1; }
+
+# Cada comprobacion depende de una precondicion CONCRETA, no de un generico
+# "¿hay sesion de Azure?". Con el generico, verify-scaling.sh se pondria a
+# observar durante doce minutos una aplicacion que no existe y terminaria
+# reportando "no se observo variacion" — un fallo que parece del sistema cuando
+# en realidad es que no habia nada desplegado que observar.
+hay_container_app() {
+  hay_azure && az containerapp show -g "$RESOURCE_GROUP" -n "$1" >/dev/null 2>&1
+}
+hay_recurso() {
+  hay_azure && az resource show -g "$RESOURCE_GROUP" -n "$1" --resource-type "$2" >/dev/null 2>&1
+}
 
 # ============================================================================
 note "Persona 1 — trazabilidad, motor, esquema y lectura"
@@ -169,11 +190,17 @@ capturar iss-s3-009 "01-plan-container-apps.txt" \
   -- bash scripts/provision-container-apps.sh --validate-only
 
 if hay_azure; then
+  capturar iss-s3-008 "02-registro-real.txt" \
+    "Registro creado: SKU, usuario administrador e identidad de pull" \
+    -- bash scripts/verify/verify-registry.sh
+fi
+
+if hay_container_app "ca-${NAME_PREFIX:-cent}-api"; then
   capturar iss-s3-010 "01-observacion-escalado.txt" \
     "Replicas antes, durante y despues de la carga" \
     -- bash scripts/verify/verify-scaling.sh
 else
-  saltar iss-s3-010 "Requiere el sistema desplegado y carga generada en vivo"
+  saltar iss-s3-010 "La Container App de la API no existe: no hay replicas que observar. Requiere el pipeline completo (semanas 1 y 2) desplegado"
 fi
 
 # ============================================================================
@@ -207,9 +234,21 @@ capturar iss-s3-016 "01-consultas-de-operacion.txt" \
   -- cat docs/observabilidad/consultas-kql.md
 
 if hay_azure; then
-  capturar iss-s3-016 "02-plan-observabilidad.txt" \
-    "Plan de Application Insights y alerta" \
-    -- bash scripts/provision-observability.sh --validate-only
+  capturar iss-s3-016 "02-observabilidad-real.txt" \
+    "Application Insights, tope diario de ingesta y retencion" \
+    -- bash scripts/verify/verify-observability-setup.sh
+
+  capturar iss-s3-018 "01-alerta-configurada.txt" \
+    "Alerta creada: condicion, severidad, ventana y destinatario" \
+    -- bash scripts/verify/verify-alert.sh
+
+  capturar iss-s3-020 "01-consumo-de-credito.txt" \
+    "Consumo acumulado y recursos que facturan" \
+    -- bash scripts/verify/verify-cost.sh
+
+  # El disparo de la alerta necesita transacciones que se ingieran y no se
+  # puntuen. Sin pipeline no hay forma de provocar esa condicion.
+  saltar iss-s3-017 "Application Insights existe pero sin telemetria ingerida: requiere el pipeline generando trafico"
 else
   saltar iss-s3-017 "Requiere Application Insights con datos ingeridos"
   saltar iss-s3-018 "Requiere provocar la condicion sobre el sistema desplegado"
