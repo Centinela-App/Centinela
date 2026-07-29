@@ -45,7 +45,11 @@ main() {
 
   if [ "$ACTION" = "stop" ]; then
     log_info "Apagando recursos que facturan por tiempo..."
-    container_apps 0 0
+    # min=0 apaga (cero replicas activas). max se deja en 1 y NO en 0: Container
+    # Apps rechaza max=0 con "must be in the range [1,1000]". Con min=0/max=1 el
+    # contenedor queda a cero replicas y solo podria levantar UNA si algo lo
+    # invocara — no factura mientras no lo hagan, que es el objetivo del apagado.
+    container_apps 0 1
     app_service stop
     postgres stop
     log_info "Apagado completo. Cosmos, Storage y ACR siguen activos: facturan por"
