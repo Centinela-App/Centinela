@@ -74,13 +74,17 @@ readonly TAGS=(
 
 FUNCTION_PRINCIPAL=""
 CONSUMER_PRINCIPAL=""
+# Semana 3: en la topologia de Container Apps no existe la Web App, asi que el
+# publicador tambien se pasa explicito (la identidad compartida id-<prefijo>-apps).
+PUBLISHER_PRINCIPAL=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --function-principal) FUNCTION_PRINCIPAL="${2:?}"; shift 2 ;;
-    --consumer-principal) CONSUMER_PRINCIPAL="${2:?}"; shift 2 ;;
+    --function-principal)  FUNCTION_PRINCIPAL="${2:?}"; shift 2 ;;
+    --consumer-principal)  CONSUMER_PRINCIPAL="${2:?}"; shift 2 ;;
+    --publisher-principal) PUBLISHER_PRINCIPAL="${2:?}"; shift 2 ;;
     -h|--help)
-      echo "Uso: $0 [--function-principal ID] [--consumer-principal ID]"; exit 0 ;;
+      echo "Uso: $0 [--function-principal ID] [--consumer-principal ID] [--publisher-principal ID]"; exit 0 ;;
     *) die "Argumento desconocido: $1" ;;
   esac
 done
@@ -206,12 +210,21 @@ ensure_case_queues() {
 
 assign_publisher_roles() {
   local topic_id="$1" app_name="$2" rg="$3"
+
+  # Topologia de Semana 3: el publicador es la identidad de las Container Apps,
+  # pasada explicitamente. La Web App puede no existir y no es un error.
+  if [ -n "$PUBLISHER_PRINCIPAL" ]; then
+    log_info "Asignando '$EVENTGRID_SENDER_ROLE' al publicador explicito..."
+    assign_role_scope "$PUBLISHER_PRINCIPAL" "ServicePrincipal" "$EVENTGRID_SENDER_ROLE" "$topic_id"
+    return
+  fi
+
   local prod_pid staging_pid
   prod_pid="$(az webapp identity show --name "$app_name" --resource-group "$rg" \
     --query principalId -o tsv 2>/dev/null || true)"
   staging_pid="$(az webapp identity show --name "$app_name" --resource-group "$rg" \
     --slot "$SLOT_NAME" --query principalId -o tsv 2>/dev/null || true)"
-  [ -n "$prod_pid" ]    || die "Web App de produccion sin Managed Identity (ISS-S1-004)."
+  [ -n "$prod_pid" ]    || die "Web App de produccion sin Managed Identity (ISS-S1-004). En la topologia de contenedores, pasa --publisher-principal."
   [ -n "$staging_pid" ] || die "Slot staging sin Managed Identity (ISS-S1-004)."
 
   log_info "Asignando '$EVENTGRID_SENDER_ROLE' a la MI de la Web App (publicar evento)..."
@@ -272,6 +285,15 @@ wire_topic_endpoint() {
   local topic="$1" rg="$2" app_name="$3" endpoint
   endpoint="$(az eventgrid topic show --name "$topic" --resource-group "$rg" --query endpoint -o tsv)"
   [ -n "$endpoint" ] || die "No se pudo resolver el endpoint del topico '$topic'."
+
+  # Sin Web App no hay app settings que escribir: en la topologia de contenedores
+  # el endpoint viaja como variable de entorno de la Container App en su despliegue.
+  if ! az webapp show --name "$app_name" --resource-group "$rg" >/dev/null 2>&1; then
+    log_warn "Web App '$app_name' no existe; el endpoint se inyecta al desplegar las Container Apps:"
+    log_warn "  CENTINELA_EVENTGRID_TOPIC_ENDPOINT=$endpoint"
+    return 0
+  fi
+
   log_info "Configurando CENTINELA_EVENTGRID_TOPIC_ENDPOINT en produccion y staging..."
   with_retry 3 az webapp config appsettings set --name "$app_name" --resource-group "$rg" \
     --settings "CENTINELA_EVENTGRID_TOPIC_ENDPOINT=$endpoint" --output none

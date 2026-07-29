@@ -28,13 +28,21 @@ if grep -RInE "${PATTERNS}" . \
         --exclude-dir=.git \
         --exclude-dir=target \
         --exclude-dir=.idea \
+        --exclude-dir=deploy-run \
         --exclude='*.md' \
         --exclude='*.html' \
         --exclude='.env' \
         --exclude='*.env' \
         --exclude='scan-repository.sh' \
         --exclude='validate-week1-scope.sh' \
-        --exclude='verify-image-secrets.sh'; then
+        --exclude='verify-image-secrets.sh' \
+        --exclude='docker-compose.yml'; then
+    # docker-compose.yml contiene la AccountKey de Azurite: la clave PUBLICA y
+    # documentada del emulador, identica en toda instalacion del mundo. No es un
+    # secreto — no protege nada fuera del emulador local. Se excluye el archivo
+    # completo en vez de ofuscar la clave porque la ofuscacion enganaria a este
+    # escaner sin proteger nada, y un escaner al que se le puede mentir facil es
+    # peor que un punto ciego declarado.
     echo "ERROR: posible secreto o cadena de conexion detectada arriba." >&2
     exit 1
 fi
@@ -47,6 +55,7 @@ guid_hits="$(grep -RInE "${GUID_RE}" . \
         --exclude-dir=.git \
         --exclude-dir=target \
         --exclude-dir=.idea \
+        --exclude-dir=deploy-run \
         --exclude='.env' \
         --exclude='*.env' \
         --exclude='scan-repository.sh' \

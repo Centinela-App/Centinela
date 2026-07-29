@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -27,8 +28,11 @@ import java.util.List;
  * entorno no secretas (ver {@code application.yml}); nunca se versionan
  * valores concretos de un tenant.
  */
+// Fuera del perfil 'local': alli rige LocalSecurityConfiguration, que documenta por
+// que y bajo que salvaguardas se apaga la autenticacion en el entorno de desarrollo.
 @Configuration
 @EnableWebSecurity
+@Profile("!local")
 public class SecurityConfiguration {
 
     private final String issuerUri;

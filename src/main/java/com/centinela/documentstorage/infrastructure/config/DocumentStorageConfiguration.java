@@ -24,14 +24,20 @@ public class DocumentStorageConfiguration {
     @Profile("!test")
     VerificationDocumentStoragePort verificationDocumentStoragePort(
             @Value("${centinela.storage.documents.account-name}") String accountName,
-            @Value("${centinela.storage.documents.container-name}") String containerName) {
-        BlobContainerClient containerClient = new BlobServiceClientBuilder()
-                .endpoint("https://" + accountName + ".blob.core.windows.net")
-                .credential(new DefaultAzureCredentialBuilder().build())
-                .buildClient()
-                .getBlobContainerClient(containerName);
-
-        return new AzureVerificationDocumentBlobAdapter(containerClient);
+            @Value("${centinela.storage.documents.container-name}") String containerName,
+            @Value("${centinela.storage.documents.connection-string:}") String connectionString) {
+        // Misma bifurcacion que el Blob de transacciones: Azurite por cadena de
+        // conexion en local, Managed Identity en Azure. Ver la nota de seguridad en
+        // RawTransactionBlobProperties.
+        BlobServiceClientBuilder builder = new BlobServiceClientBuilder();
+        if (connectionString != null && !connectionString.isBlank()) {
+            builder.connectionString(connectionString);
+        } else {
+            builder.endpoint("https://" + accountName + ".blob.core.windows.net")
+                    .credential(new DefaultAzureCredentialBuilder().build());
+        }
+        return new AzureVerificationDocumentBlobAdapter(
+                builder.buildClient().getBlobContainerClient(containerName));
     }
 
     /**

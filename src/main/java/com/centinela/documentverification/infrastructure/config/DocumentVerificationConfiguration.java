@@ -41,14 +41,21 @@ public class DocumentVerificationConfiguration {
     @Profile("!test")
     public DocumentContentReaderPort documentContentReaderPort(
             @Value("${centinela.storage.documents.account-name}") String accountName,
-            @Value("${centinela.storage.documents.container-name}") String containerName) {
-        BlobContainerClient containerClient = new BlobServiceClientBuilder()
-                .endpoint("https://" + accountName + ".blob.core.windows.net")
-                .credential(new DefaultAzureCredentialBuilder().build())
-                .buildClient()
-                .getBlobContainerClient(containerName);
-
-        return new AzureDocumentContentReader(containerClient);
+            @Value("${centinela.storage.documents.container-name}") String containerName,
+            @Value("${centinela.storage.documents.connection-string:}") String connectionString) {
+        // Azurite por cadena de conexion en local; Managed Identity en Azure. Sin esta
+        // bifurcacion el extractor local no podia LEER los documentos que la carga
+        // local si podia ESCRIBIR: el fallo aparecia como "blob no encontrado" y
+        // apuntaba al documento en vez de a la configuracion.
+        BlobServiceClientBuilder builder = new BlobServiceClientBuilder();
+        if (connectionString != null && !connectionString.isBlank()) {
+            builder.connectionString(connectionString);
+        } else {
+            builder.endpoint("https://" + accountName + ".blob.core.windows.net")
+                    .credential(new DefaultAzureCredentialBuilder().build());
+        }
+        return new AzureDocumentContentReader(
+                builder.buildClient().getBlobContainerClient(containerName));
     }
 
     @Bean

@@ -87,6 +87,9 @@ readonly EXPLAINER_MAX_REPLICAS="${CENTINELA_EXPLAINER_MAX_REPLICAS:-3}"
 readonly CPU_PER_REPLICA="0.5"
 readonly MEMORY_PER_REPLICA="1.0Gi"
 
+# Subred delegada que crea provision-network-containerapps.sh.
+readonly SUBNET_ACA="snet-container-apps"
+
 VALIDATE_ONLY=0
 for arg in "$@"; do
   case "$arg" in
@@ -164,10 +167,30 @@ ensure_workspace() {
 
 ensure_environment() {
   local name="$1" workspace="$2"
+
+  # La subred se fija AL CREAR el entorno y no se puede anadir despues. Si el
+  # entorno existe sin integracion de red, sus aplicaciones nunca alcanzaran los
+  # Private Endpoints de Cosmos, PostgreSQL o Key Vault — y el sintoma sera un
+  # tiempo de espera al arrancar, no un error de red, asi que se diagnostica mal.
+  # Por eso se comprueba la integracion y no solo la existencia.
   if az containerapp env show -g "$RESOURCE_GROUP" -n "$name" >/dev/null 2>&1; then
-    log_info "Entorno '$name' ya existe."
-    return
+    local subred_actual
+    subred_actual="$(az containerapp env show -g "$RESOURCE_GROUP" -n "$name" \
+      --query "properties.vnetConfiguration.infrastructureSubnetId" -o tsv 2>/dev/null)"
+    if [ -n "$subred_actual" ] && [ "$subred_actual" != "null" ]; then
+      log_info "Entorno '$name' ya existe con integracion de red."
+      return
+    fi
+    die "El entorno '$name' existe SIN integracion de red y eso no se puede corregir en caliente.
+     Sus aplicaciones no alcanzarian los almacenes privados.
+     Eliminalo y vuelve a ejecutar: az containerapp env delete -g $RESOURCE_GROUP -n $name --yes"
   fi
+
+  local vnet="${NAME_PREFIX}-vnet-week1"
+  local subnet_id
+  subnet_id="$(az network vnet subnet show -g "$RESOURCE_GROUP" --vnet-name "$vnet" \
+    -n "$SUBNET_ACA" --query id -o tsv 2>/dev/null)" \
+    || die "Falta la subred '$SUBNET_ACA'. Ejecuta antes provision-network-containerapps.sh."
 
   local workspace_id workspace_key
   workspace_id="$(az monitor log-analytics workspace show -g "$RESOURCE_GROUP" -n "$workspace" \
@@ -175,11 +198,12 @@ ensure_environment() {
   workspace_key="$(az monitor log-analytics workspace get-shared-keys -g "$RESOURCE_GROUP" -n "$workspace" \
     --query primarySharedKey -o tsv)"
 
-  log_info "Creando Container Apps Environment '$name'..."
+  log_info "Creando Container Apps Environment '$name' integrado a '$SUBNET_ACA'..."
   az containerapp env create \
     -g "$RESOURCE_GROUP" -n "$name" -l "$LOCATION" \
     --logs-workspace-id "$workspace_id" \
     --logs-workspace-key "$workspace_key" \
+    --infrastructure-subnet-resource-id "$subnet_id" \
     --output none
 
   # La clave del workspace se uso solo en memoria y no se persiste en ningun

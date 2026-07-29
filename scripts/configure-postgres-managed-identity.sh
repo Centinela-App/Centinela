@@ -245,14 +245,28 @@ main() {
 
   az postgres flexible-server show --name "$server" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1 \
     || die "No existe PostgreSQL '$server'."
-  az webapp show --name "$app" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1 \
-    || die "No existe Web App '$app'."
 
-  prod_oid="$(az webapp identity show --name "$app" --resource-group "$RESOURCE_GROUP" \
-    --query principalId -o tsv)"
-  staging_oid="$(az webapp identity show --name "$app" --resource-group "$RESOURCE_GROUP" \
-    --slot "$SLOT_NAME" --query principalId -o tsv)"
-  [ -n "$prod_oid" ] && [ -n "$staging_oid" ] || die "Faltan Managed Identities de produccion/staging."
+  # Dos topologias posibles. Con Web App (Semanas 1-2): un principal por ambiente,
+  # prod y staging. Sin Web App (Semana 3, ADR-009): las Container Apps comparten
+  # la identidad id-<prefijo>-apps y basta UN principal. La deteccion es por
+  # existencia del recurso y no por bandera, para que el mismo comando funcione
+  # en ambas sin que el operador tenga que saber en cual esta.
+  local apps_mode=0 apps_oid="" apps_role="${NAME_PREFIX}_apps"
+  if az webapp show --name "$app" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
+    prod_oid="$(az webapp identity show --name "$app" --resource-group "$RESOURCE_GROUP" \
+      --query principalId -o tsv)"
+    staging_oid="$(az webapp identity show --name "$app" --resource-group "$RESOURCE_GROUP" \
+      --slot "$SLOT_NAME" --query principalId -o tsv)"
+    [ -n "$prod_oid" ] && [ -n "$staging_oid" ] || die "Faltan Managed Identities de produccion/staging."
+  else
+    apps_oid="$(az identity show -n "id-${NAME_PREFIX}-apps" -g "$RESOURCE_GROUP" \
+      --query principalId -o tsv 2>/dev/null || true)"
+    [ -n "$apps_oid" ] \
+      || die "No existe la Web App '$app' NI la identidad 'id-${NAME_PREFIX}-apps'.
+     En la topologia de contenedores, ejecuta antes provision-containerapps-identity.sh."
+    apps_mode=1
+    log_info "Topologia de contenedores: principal unico '$apps_role' para la identidad compartida."
+  fi
 
   admin="$(az ad signed-in-user show --query userPrincipalName -o tsv 2>/dev/null || true)"
   [ -n "$admin" ] || die "Este bootstrap requiere sesion interactiva del admin Entra de PostgreSQL."
@@ -292,6 +306,22 @@ main() {
   # GRANT), asi que reintentarlo es seguro y absorbe esa intermitencia.
   with_retry 4 ensure_database "$host" "$admin" "$token" \
     || die "No se pudo asegurar la base '$DATABASE_NAME' tras varios reintentos."
+
+  if [ "$apps_mode" -eq 1 ]; then
+    with_retry 4 ensure_principal "$host" "$admin" "$token" "$apps_role" "$apps_oid" \
+      || die "No se pudo asegurar el principal '$apps_role' tras varios reintentos."
+    unset token PGPASSWORD
+    # Sin Web App no hay app settings que escribir. La URL se inyecta como
+    # variable de entorno al desplegar las Container Apps; se imprime aqui para
+    # que el operador no tenga que reconstruir su forma exacta (el plugin de
+    # autenticacion es la parte que nadie recuerda de memoria).
+    log_info "Principal '$apps_role' listo. JDBC para las Container Apps:"
+    log_info "  CENTINELA_POSTGRES_USER=$apps_role"
+    log_info "  CENTINELA_POSTGRES_JDBC_URL=jdbc:postgresql://${host}:5432/${DATABASE_NAME}?sslmode=require&authenticationPluginClassName=com.azure.identity.extensions.jdbc.postgresql.AzurePostgresqlAuthenticationPlugin"
+    log_info "ISS-S2-002/010/011 (topologia contenedores): base y principal Entra configurados."
+    return 0
+  fi
+
   with_retry 4 ensure_principal "$host" "$admin" "$token" "$prod_role" "$prod_oid" \
     || die "No se pudo asegurar el principal '$prod_role' tras varios reintentos."
   with_retry 4 ensure_principal "$host" "$admin" "$token" "$staging_role" "$staging_oid" \

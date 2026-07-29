@@ -1,0 +1,152 @@
+# =============================================================================
+# Centinela — entorno local completo, sin Azure.
+#
+#   bash start.sh      levanta todo y espera a que la API responda
+#   bash stop.sh       desmonta todo, incluidos volumenes y redes
+#
+# QUE REPRODUCE Y QUE NO
+# ----------------------
+# Reproduce: ingesta (Blob y colas en Azurite), casos (PostgreSQL), explicador y
+# verificacion documental (Mongo como doble de Cosmos) y la API de consulta.
+#
+# NO reproduce: Event Grid ni el motor de scoring — no existe emulador local de
+# Event Grid. Ese tramo se simula con scripts/local/simulate-scoring.sh. Ninguna
+# conclusion de rendimiento local vale para Azure.
+#
+# SOBRE LA "CREDENCIAL" DE AZURITE
+# --------------------------------
+# La AccountKey de abajo es la clave publica y documentada del emulador Azurite,
+# identica en toda instalacion del mundo. No es un secreto ni protege nada: solo
+# funciona contra el emulador local. scan-repository.sh la excluye por nombre de
+# archivo con esta misma justificacion.
+# =============================================================================
+
+name: centinela
+
+x-azurite-connection: &azurite-connection
+  CENTINELA_STORAGE_CONNECTION_STRING: >-
+    DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;QueueEndpoint=http://azurite:10001/devstoreaccount1
+
+services:
+  # ---------------------------------------------------------------------------
+  # Emulador de Azure Storage: Blob (10000) y Queue (10001).
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.31.0
+    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --location /data --silent
+    volumes:
+      - azurite-data:/data
+    ports:
+      - "10000:10000"
+      - "10001:10001"
+
+  # Trabajo de un solo uso: crea contenedores y colas y termina. Reintenta hasta
+  # que Azurite acepte conexiones, que es mas robusto que adivinar su arranque
+  # con un healthcheck sobre una imagen que no trae utilidades de red.
+  storage-init:
+    image: mcr.microsoft.com/azure-cli:2.67.0
+    depends_on:
+      - azurite
+    environment:
+      <<: *azurite-connection
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "Esperando a Azurite..."
+        for i in $$(seq 1 30); do
+          az storage container list --connection-string "$$CENTINELA_STORAGE_CONNECTION_STRING" >/dev/null 2>&1 && break
+          sleep 2
+        done
+        for c in raw-transactions-production verification-documents-production; do
+          az storage container create --name "$$c" \
+            --connection-string "$$CENTINELA_STORAGE_CONNECTION_STRING" >/dev/null
+          echo "contenedor listo: $$c"
+        done
+        az storage queue create --name flagged-cases-production \
+          --connection-string "$$CENTINELA_STORAGE_CONNECTION_STRING" >/dev/null
+        echo "cola lista: flagged-cases-production"
+        echo "Inicializacion de storage completada."
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  # Almacen de casos. La contrasena por defecto es SOLO local: el compose no se
+  # despliega en ninguna parte y PostgreSQL no expone puerto fuera del host.
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: centinela
+      POSTGRES_USER: centinela
+      POSTGRES_PASSWORD: ${CENTINELA_LOCAL_PG_PASSWORD:-centinela-local}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U centinela -d centinela"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # ---------------------------------------------------------------------------
+  # Doble local de Cosmos DB for MongoDB. Misma API de datos; NO reproduce el
+  # particionado ni las RU de Cosmos.
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.runCommand({ping:1}).ok' | grep -q 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # ---------------------------------------------------------------------------
+  # API: ingesta + consulta + consumidor de casos. Mismo Dockerfile que Azure;
+  # cambia el perfil, no la imagen.
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: centinela-api:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
+    environment:
+      <<: *azurite-connection
+      SPRING_PROFILES_ACTIVE: local
+      # Anula el agente de telemetria del ENTRYPOINT: en local no hay Application
+      # Insights y el agente solo aportaria ruido de reintentos en el log.
+      JAVA_TOOL_OPTIONS: ""
+      CENTINELA_ROLE_NAME: centinela-api-local
+    ports:
+      - "8080:8080"
+
+  # ---------------------------------------------------------------------------
+  # Explicador + extractor documental: la misma imagen con otros interruptores,
+  # igual que en Azure. Detenerlo es el ensayo del escenario de fallo:
+  #   docker compose stop explainer   -> los casos siguen abriendose en PENDING
+  #   docker compose start explainer  -> el backlog se explica solo
+  explainer:
+    image: centinela-api:local
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      <<: *azurite-connection
+      SPRING_PROFILES_ACTIVE: local
+      JAVA_TOOL_OPTIONS: ""
+      CENTINELA_EXPLAINER_ENABLED: "true"
+      CENTINELA_DOCUMENT_VERIFICATION_ENABLED: "true"
+      CENTINELA_QUEUE_AUTO_START: "false"
+      CENTINELA_ROLE_NAME: centinela-explainer-local
+
+volumes:
+  azurite-data:
+  postgres-data:
+  mongo-data:

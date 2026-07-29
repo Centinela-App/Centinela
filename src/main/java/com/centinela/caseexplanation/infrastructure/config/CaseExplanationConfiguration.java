@@ -8,7 +8,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.scheduling.annotation.EnableScheduling;
 
 import java.time.Clock;
 
@@ -23,8 +22,10 @@ import java.time.Clock;
  * <p>El acceso al registro de scoring lo provee {@code ScoringRecordConfiguration}, que
  * debe estar activo tambien en este contenedor.
  */
+// @EnableScheduling NO va aqui: vivio aqui y produjo un bug silencioso — con el
+// explicador apagado, el worker de extraccion documental quedaba sin planificador.
+// La capacidad de planificar es de la aplicacion (SchedulingConfiguration).
 @Configuration
-@EnableScheduling
 @ConditionalOnProperty(name = "centinela.explainer.enabled", havingValue = "true")
 public class CaseExplanationConfiguration {
 

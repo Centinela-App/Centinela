@@ -43,12 +43,18 @@ public class AzureStorageQueueAdapter implements FlaggedCaseQueueListener.QueueR
     @Autowired
     public AzureStorageQueueAdapter(
             @Value("${centinela.storage.blob.account-name}") String accountName,
-            @Value("${centinela.queue.flagged-cases.name}") String queueName) {
-        this.queueClient = new QueueClientBuilder()
-                .endpoint(buildEndpoint(accountName))
-                .credential(new DefaultAzureCredentialBuilder().build())
-                .queueName(queueName)
-                .buildClient();
+            @Value("${centinela.queue.flagged-cases.name}") String queueName,
+            @Value("${centinela.storage.queue.connection-string:}") String connectionString) {
+        // Azurite por cadena de conexion en local; Managed Identity en Azure. La
+        // cadena vacia (el defecto) mantiene el comportamiento de produccion intacto.
+        QueueClientBuilder builder = new QueueClientBuilder().queueName(queueName);
+        if (connectionString != null && !connectionString.isBlank()) {
+            builder.connectionString(connectionString);
+        } else {
+            builder.endpoint(buildEndpoint(accountName))
+                    .credential(new DefaultAzureCredentialBuilder().build());
+        }
+        this.queueClient = builder.buildClient();
 
         log.info("Azure Storage Queue adapter initialized for queue: {}", queueName);
     }
