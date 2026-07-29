@@ -28,7 +28,7 @@ INTERVALO_S="${CENTINELA_SCALING_SAMPLE_INTERVAL:-10}"
 
 app="ca-${NAME_PREFIX}-api"
 sello="$(date -u +%Y%m%dT%H%M%SZ)"
-destino="$REPO_ROOT/docs/evidence/iss-s3-009/run-$sello"
+destino="$REPO_ROOT/docs/evidence/iss-s3-010/run-$sello"
 mkdir -p "$destino"
 salida="$destino/replicas.tsv"
 

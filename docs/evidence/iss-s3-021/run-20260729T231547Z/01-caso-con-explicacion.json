@@ -1,0 +1,13 @@
+{
+    "caseId": 1,
+    "transactionId": "tx-e2e-fraude-225513",
+    "accountId": "acc-e2e-225513",
+    "score": 65.0,
+    "status": "NEW",
+    "explanationState": "GENERATED",
+    "explanation": "Transacci\u00c3\u00b3n marcada con score 65 (umbral: 60).\n\n- La transacci\u00c3\u00b3n anterior de esta cuenta se origin\u00c3\u00b3 en Medellin hace 11 minutos; esta se origina en Madrid, a 8.026,7 km, lo que implica un desplazamiento a 41.817,8 km/h (+40 puntos).\n- El monto de COP 4.200.000 supera en 77.57\u00c3\u2014 el promedio hist\u00c3\u00b3rico de la cuenta (COP 54.142,86), calculado sobre 7 transacciones previas (+25 puntos).",
+    "traceparent": "00-13a057da9055f260b4327c12a990e9ed-526f968159b7a3c7-01",
+    "openedAt": "2026-07-29T23:02:47.928389Z",
+    "updatedAt": "2026-07-29T23:10:17.829365Z",
+    "verificationDocuments": []
+}

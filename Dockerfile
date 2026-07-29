@@ -69,8 +69,16 @@ EXPOSE 8080
 # Cosmos y la de PostgreSQL llegan como variables de entorno inyectadas por la
 # plataforma desde Key Vault en el arranque. Un ARG o un ENV con un secreto
 # quedaria grabado en la capa y seria recuperable con `docker history`.
-ENV JAVA_TOOL_OPTIONS="-javaagent:/app/applicationinsights-agent.jar" \
-    JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:+UseSerialGC"
+# file.encoding=UTF-8 es OBLIGATORIO, no una preferencia. La imagen JRE Alpine
+# arranca con locale POSIX (ASCII), asi que sin esto las explicaciones —que
+# llevan acentos y el signo × — se persisten con mojibake: "Transacción" queda
+# como "Transacciexception". Se descubrio en el primer caso real en Azure. Va en
+# el ENV y no solo en la variable de despliegue para que la imagen sea correcta
+# por si misma, sin depender de que la plataforma la configure.
+ENV JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -javaagent:/app/applicationinsights-agent.jar" \
+    JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:+UseSerialGC" \
+    LANG="C.UTF-8" \
+    LC_ALL="C.UTF-8"
 
 # Container Apps enruta el trafico segun este puerto.
 ENV SERVER_PORT=8080

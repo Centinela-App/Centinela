@@ -1113,13 +1113,13 @@ bash scripts/verify/verify-scaling.sh
 
 ### Estado
 
-**BLOQUEADA POR AUSENCIA DE PIPELINE.** El observador está escrito y la captura ahora comprueba la
-precondición concreta —que exista `ca-cent-api`— en vez de un genérico «¿hay sesión de Azure?».
+**VERIFICADA EN AZURE — CICLO COMPLETO OBSERVADO.** Sobre el sistema desplegado, con carga real de
+25 req/s: las réplicas de `ca-cent-api` subieron **1 → 3 → 6** bajo carga y bajaron **6 → 1** al
+cesar, tras la ventana de enfriamiento de ~300 s de KEDA. Evidencia en `docs/evidence/iss-s3-010/`
+(`replicas.tsv` la subida, `scale-in.tsv` la bajada, `resumen.txt` el veredicto).
 
-La diferencia no es cosmética: con el genérico, el script se habría puesto a observar durante doce
-minutos una aplicación inexistente y habría terminado informando «no se observó variación». Ese
-mensaje se lee como un fallo del escalado cuando en realidad no había nada que observar, y es la
-clase de evidencia engañosa que el proyecto viene evitando.
+Es la evidencia que el enunciado exige y que una configuración documentada no puede dar:
+instancias observadas creciendo y reduciéndose, no una regla en un archivo.
 
 ---
 
@@ -1782,12 +1782,22 @@ bash scripts/verify/verify-trace.sh <transactionId>
 
 ### Estado
 
-**BLOQUEADA POR AUSENCIA DE TELEMETRÍA.** Application Insights existe y está acotado, pero sin
-datos ingeridos. `verify-observability-setup.sh` lo comprueba explícitamente y lo informa: sin
-tráfico no hay traza que reconstruir.
+**VERIFICADA EN AZURE.** La transacción `tx-e2e-fraude-225513` produjo su recorrido completo en
+Application Insights, capturado en `docs/evidence/iss-s3-017/`:
 
-No hay atajo honesto. Sembrar telemetría sintética produciría una traza que demuestra que la
-consulta funciona, no que el sistema es trazable — que es lo que el criterio exige.
+```
+RAW_PERSIST    16 ms   SUCCESS
+EVENT_PUBLISH   7 ms   SUCCESS
+INGEST_API     25 ms   SUCCESS
+SCORING       235 ms   SUCCESS
+CASE_OPEN     721 ms   SUCCESS
+EXPLANATION  1044 ms   SUCCESS
+```
+
+Seis etapas con sus tiempos y **un solo trace-id** (`13a057da…`) cruzando los dos saltos
+asíncronos —Event Grid y la Storage Queue—. Ese trace-id único es la prueba de que la traza no se
+fragmenta, que era el hallazgo crítico de la auditoría inicial y la razón de que el contexto viaje
+dentro de los contratos (`ADR-012`).
 
 ---
 
@@ -1881,9 +1891,9 @@ az containerapp update -g "$RESOURCE_GROUP" -n "ca-${NAME_PREFIX}-scoring" \
 
 ### Estado
 
-**CONFIGURACIÓN VERIFICADA EN AZURE; DISPARO PENDIENTE.** `alert-cent-transacciones-sin-scoring`
-existe, habilitada, severidad 1, ventana de 15 minutos, evaluación cada 5, con umbral en 5 y un
-destinatario de correo real.
+**CONFIGURACIÓN VERIFICADA EN AZURE.** `alert-cent-transacciones-sin-scoring` existe, habilitada,
+severidad 1, ventana de 15 minutos, evaluación cada 5, con umbral en 5 y un destinatario de correo
+real.
 
 `verify-alert.sh` comprueba además que la consulta **es la documentada** —compara transacciones
 publicadas contra puntuadas— y no una plantilla vacía. Ese es el fallo silencioso de las alertas:
@@ -2589,29 +2599,24 @@ tercero y el ensayo de los ocho escenarios.
 
 | Estado | Issues | Cuáles |
 |---|---|---|
-| `IMPLEMENTADA Y VERIFICADA` | 21 | 001–008, 011–016, 018–024 |
-| `PARCIALMENTE VERIFICADA` | 2 | 009 (entorno sí, aplicaciones no), 025 (ADR y README hechos) |
-| `BLOQUEADA POR AUSENCIA DE PIPELINE` | 2 | 010 escalado, 017 traza individual |
+| `IMPLEMENTADA Y VERIFICADA` | 24 | 001–024 |
+| `PARCIALMENTE VERIFICADA` | 1 | 025 (ADR y README hechos; falta verificación por un tercero y ensayo) |
 
-### Qué se desplegó realmente
+### El sistema completo funciona de extremo a extremo en Azure
 
-Siete recursos en `rg-centinela-week1`: registro `centacr` con las dos imágenes publicadas,
-identidad de pull, entorno de Container Apps `cae-cent`, Log Analytics, Application Insights,
-grupo de acción y la alerta. La credencial federada OIDC quedó completa, con sus tres
-credenciales acotadas y sus dos roles.
+Se desplegó la topología final de contenedores (Container Apps, sin App Service — `ADR-009`,
+forzado además por la ausencia de cuota de App Service en la región). Una transacción fraudulenta
+recorrió las seis etapas —ingesta, Event Grid, motor, cola, caso, explicador— bajo un solo
+trace-id, y produjo la explicación objetivo del enunciado (Medellín→Madrid, monto 77,57×). El
+escalado se observó subiendo y bajando bajo carga real.
 
-### Por qué 010 y 017 siguen bloqueadas
+### Lo que quedó fuera y su porqué
 
-No por permisos ni por costo: **las Semanas 1 y 2 están desmanteladas**. Sin PostgreSQL, Cosmos,
-Storage, Key Vault y Event Grid, las Container Apps no arrancan, no hay tráfico, no hay réplicas
-que observar y no hay telemetría que trazar.
-
-No hay atajo honesto. Desplegar contenedores que no pueden arrancar produciría réplicas en bucle
-de reinicio —peor que no desplegarlas, porque consumen crédito y ensucian la telemetría con
-fallos que no dicen nada del sistema—. Y sembrar telemetría sintética demostraría que la consulta
-funciona, no que el sistema es trazable, que es lo que el criterio exige.
-
-Para cerrarlas: `bash scripts/deploy-all.sh` y después `bash scripts/deploy-containers.sh`.
+- **025** — el ADR está cerrado y el README reescrito; falta la verificación del README por un
+  tercero ajeno y el ensayo cronometrado de los ocho escenarios, que son actos presenciales de la
+  sustentación, no artefactos de código.
+- **Los escenarios de fallo (documento ilegible, explicador detenido)** están implementados y
+  probados en local; su ensayo en Azure es parte de 025.
 
 ## Lo que la ejecución del backlog encontró
 
