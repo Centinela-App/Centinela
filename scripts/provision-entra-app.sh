@@ -90,7 +90,10 @@ configure_resource_server_settings() {
 
   local settings=(
     "CENTINELA_ENTRA_ISSUER_URI=https://login.microsoftonline.com/${tenant_id}/v2.0"
-    "CENTINELA_ENTRA_AUDIENCE=api://${app_id}"
+    # appId pelado, NO 'api://<appId>': con tokens v2 (ensure_v2_tokens) el claim
+    # 'aud' viene sin el prefijo, y validar contra la forma con prefijo rechaza
+    # todo token con un 401 que no explica el motivo.
+    "CENTINELA_ENTRA_AUDIENCE=${app_id}"
     "CENTINELA_ENTRA_JWK_SET_URI=https://login.microsoftonline.com/${tenant_id}/discovery/v2.0/keys"
   )
 
@@ -150,7 +153,26 @@ ensure_app_registration() {
     log_info "App Registration '$display_name' ya existe (appId $(mask "$app_id")). Actualizando app roles..."
     with_retry 3 az ad app update --id "$app_id" --app-roles @"$roles_file" >/dev/null
   fi
+
+  ensure_v2_tokens "$app_id"
   printf '%s' "$app_id"
+}
+
+# Fija requestedAccessTokenVersion=2. Descubierto en despliegue real, no en
+# teoria: sin esto Entra emite tokens v1 cuyo issuer es sts.windows.net, mientras
+# la API valida login.microsoftonline.com/<tenant>/v2.0 — todo token es rechazado
+# con 401 y el mensaje no menciona versiones de token por ninguna parte.
+#
+# CONSECUENCIA QUE NO ES OBVIA: en tokens v2 el claim 'aud' es el appId PELADO,
+# no 'api://<appId>'. La audiencia que la API debe validar cambia con esta
+# decision. Quien configure CENTINELA_ENTRA_AUDIENCE debe usar el appId a secas.
+ensure_v2_tokens() {
+  local app_id="$1" object_id
+  object_id="$(az ad app show --id "$app_id" --query id -o tsv)"
+  with_retry 3 az rest --method patch \
+    --url "https://graph.microsoft.com/v1.0/applications/${object_id}" \
+    --body '{"api":{"requestedAccessTokenVersion":2}}' --output none
+  log_info "Tokens de acceso v2 configurados (aud = appId pelado)."
 }
 
 ensure_identifier_uri() {

@@ -172,8 +172,14 @@ with_retry() {
 # Devuelve 0 si el rol queda asignado o ya lo estaba; 1 en cualquier otro caso,
 # imprimiendo el error real de Azure. NO enmascara fallos como "ya existia":
 # tratar ambos casos igual es como se construye una comprobacion que miente.
+#
+# El cuarto parametro (por defecto ServicePrincipal) existe por un fallo real:
+# asignarle lectura temporal al DEPLOYER —que es un User— con el tipo fijado en
+# ServicePrincipal devuelve UnmatchedPrincipalType. El tipo no es decorativo:
+# ARM lo valida contra el directorio.
 assign_role() {
   local role_name="$1" principal_id="$2" scope="$3"
+  local principal_type="${4:-ServicePrincipal}"
 
   local subscription_id
   subscription_id="$(az account show --query id -o tsv 2>/dev/null)" \
@@ -198,8 +204,8 @@ assign_role() {
   }
 
   local body salida codigo
-  body="$(printf '{"properties":{"roleDefinitionId":"/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s","principalId":"%s","principalType":"ServicePrincipal"}}' \
-    "$subscription_id" "$role_id" "$principal_id")"
+  body="$(printf '{"properties":{"roleDefinitionId":"/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s","principalId":"%s","principalType":"%s"}}' \
+    "$subscription_id" "$role_id" "$principal_id" "$principal_type")"
 
   salida="$(az rest --method put \
     --url "https://management.azure.com${scope}/providers/Microsoft.Authorization/roleAssignments/${assignment_id}?api-version=2022-04-01" \

@@ -122,9 +122,19 @@ resolve_runtime_configuration() {
 
   # Del registro de Entra solo hacen falta el appId y el tenant; el secreto de
   # Cosmos se referencia desde Key Vault y nunca pasa por este script.
-  ENTRA_APP_ID="$(az ad app list --display-name "${NAME_PREFIX}-api-week1" --query '[0].appId' -o tsv 2>/dev/null)"
+  #
+  # CENTINELA_ENTRA_APP_ID permite fijarlo por entorno: el service principal del
+  # pipeline puede no tener permiso de lectura sobre Microsoft Graph, y 'az ad
+  # app list' fallaria alli aunque el appId sea un identificador publico que el
+  # pipeline puede recibir como variable sin comprometer nada.
+  ENTRA_APP_ID="${CENTINELA_ENTRA_APP_ID:-$(az ad app list --display-name "${NAME_PREFIX}-api-week1" --query '[0].appId' -o tsv 2>/dev/null)}"
   [ -n "$ENTRA_APP_ID" ] && [ "$ENTRA_APP_ID" != "null" ] \
-    || die "Falta el registro de aplicacion '${NAME_PREFIX}-api-week1'. Ejecuta provision-entra-app.sh."
+    || die "Falta el registro '${NAME_PREFIX}-api-week1'. Ejecuta provision-entra-app.sh, o define CENTINELA_ENTRA_APP_ID."
+  # La audiencia que la API valida es el appId PELADO: con tokens v2
+  # (requestedAccessTokenVersion=2, fijado por provision-entra-app.sh) el claim
+  # 'aud' no lleva el prefijo 'api://'. Validar contra la forma con prefijo
+  # rechaza todo token con un 401 que no menciona el motivo — se descubrio en
+  # despliegue real, no en teoria.
   TENANT_ID="$(az account show --query tenantId -o tsv)"
 
   COSMOS_SECRET_URI="https://${KEY_VAULT}.vault.azure.net/secrets/cosmos-mongo-connection-string"
@@ -162,7 +172,7 @@ deploy_api() {
         CENTINELA_POSTGRES_USER="${NAME_PREFIX}_apps" \
         CENTINELA_COSMOS_MONGO_CONNECTION_STRING=secretref:cosmos-mongo \
         CENTINELA_ENTRA_ISSUER_URI="https://login.microsoftonline.com/${TENANT_ID}/v2.0" \
-        CENTINELA_ENTRA_AUDIENCE="api://${ENTRA_APP_ID}" \
+        CENTINELA_ENTRA_AUDIENCE="${ENTRA_APP_ID}" \
         CENTINELA_ENTRA_JWK_SET_URI="https://login.microsoftonline.com/${TENANT_ID}/discovery/v2.0/keys" \
         APPLICATIONINSIGHTS_CONNECTION_STRING="$INSIGHTS_CONNECTION" \
         CENTINELA_SCORING_RECORD_ENABLED=true \
@@ -252,6 +262,9 @@ deploy_scoring() {
         CENTINELA_FLAGGED_CASES_QUEUE_STAGING=flagged-cases-staging \
         COSMOS_DATABASE=centinela \
         COSMOS_COLLECTION=transactions \
+        SCORING_THRESHOLD="${SCORING_THRESHOLD:-60}" \
+        RISKY_MERCHANTS="${RISKY_MERCHANTS:-Casino Royale,BetCrypto}" \
+        RISKY_CATEGORIES="${RISKY_CATEGORIES:-gambling,crypto,pawn_shop}" \
         APPLICATIONINSIGHTS_CONNECTION_STRING="$INSIGHTS_CONNECTION" \
         CENTINELA_ROLE_NAME=centinela-scoring \
       --output none
@@ -300,11 +313,28 @@ wire_eventgrid_subscription() {
   # El deployer necesita lectura temporal: mismo patron conceder-usar-revocar
   # que ya usa provision-keyvault.sh.
   local deployer_oid vault_id key_secret system_key
-  deployer_oid="$(az ad signed-in-user show --query id -o tsv)"
+  # 'az ad signed-in-user' solo funciona con usuario interactivo. Bajo el service
+  # principal del pipeline no hay "signed-in user": alli la suscripcion de Event
+  # Grid ya existe de un despliegue anterior (es idempotente y la clave del host
+  # no cambia entre imagenes), asi que se comprueba y se sale en vez de fallar
+  # con un error de Graph que no explica nada.
+  deployer_oid="$(az ad signed-in-user show --query id -o tsv 2>/dev/null || true)"
+  if [ -z "$deployer_oid" ]; then
+    if az eventgrid event-subscription show \
+         --source-resource-id "$(az eventgrid topic show -n "$EVENTGRID_TOPIC" -g "$RESOURCE_GROUP" --query id -o tsv)" \
+         --name "${NAME_PREFIX}-scoring" >/dev/null 2>&1; then
+      log_info "Ejecucion no interactiva y la suscripcion ya existe: nada que hacer."
+      return 0
+    fi
+    log_warn "Ejecucion no interactiva SIN suscripcion previa: el cableado de Event Grid"
+    log_warn "requiere una corrida interactiva inicial (lectura temporal del vault)."
+    return 0
+  fi
   vault_id="$(az keyvault show -n "$KEY_VAULT" -g "$RESOURCE_GROUP" --query id -o tsv)"
 
   log_info "Concediendo lectura temporal del vault al deployer..."
-  with_retry 5 assign_role "Key Vault Secrets User" "$deployer_oid" "$vault_id" || true
+  # El deployer interactivo es un User, no un ServicePrincipal: el tipo importa.
+  with_retry 5 assign_role "Key Vault Secrets User" "$deployer_oid" "$vault_id" "User" || true
   # La asignacion RBAC tarda en propagar al plano de datos del vault.
   sleep 30
 
@@ -383,7 +413,7 @@ deploy_explainer() {
         CENTINELA_POSTGRES_USER="${NAME_PREFIX}_apps" \
         CENTINELA_COSMOS_MONGO_CONNECTION_STRING=secretref:cosmos-mongo \
         CENTINELA_ENTRA_ISSUER_URI="https://login.microsoftonline.com/${TENANT_ID}/v2.0" \
-        CENTINELA_ENTRA_AUDIENCE="api://${ENTRA_APP_ID}" \
+        CENTINELA_ENTRA_AUDIENCE="${ENTRA_APP_ID}" \
         CENTINELA_ENTRA_JWK_SET_URI="https://login.microsoftonline.com/${TENANT_ID}/discovery/v2.0/keys" \
         APPLICATIONINSIGHTS_CONNECTION_STRING="$INSIGHTS_CONNECTION" \
         CENTINELA_SCORING_RECORD_ENABLED=true \
