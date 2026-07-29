@@ -370,3 +370,159 @@ El proyecto se desarrolla en tres semanas, cada una con su propio documento de a
 # Centinela
 # Centinela
 # Centinela
+
+---
+
+# Semana 3 — Despliegue en contenedores, CI/CD y observabilidad
+
+Esta sección completa el despliegue hasta el cierre del proyecto. Asume que las Fases 1 y 2
+(Semanas 1 y 2) ya se ejecutaron con `scripts/deploy-all.sh`.
+
+## Qué se despliega ahora
+
+| Recurso | Nombre | Para qué |
+|---|---|---|
+| Azure Container Registry | `<prefijo>acr` | Registro privado de imágenes |
+| Managed Identity | `id-<prefijo>-acrpull` | *Pull* sin credenciales |
+| Container Apps Environment | `cae-<prefijo>` | Plataforma de ejecución |
+| Log Analytics | `log-<prefijo>` | Almacén de telemetría |
+| Application Insights | `appi-<prefijo>` | Trazas y consultas de operación |
+| Container App — API | `ca-<prefijo>-api` | Ingesta y consulta |
+| Container App — scoring | `ca-<prefijo>-scoring` | Motor de reglas |
+| Container App — explicador | `ca-<prefijo>-explainer` | Explicaciones y extracción documental |
+
+## Despliegue desde cero
+
+### 1. Aprovisionar
+
+```bash
+bash scripts/provision-container-registry.sh     # ACR + identidad de pull
+bash scripts/provision-container-apps.sh         # Log Analytics + entorno
+CENTINELA_ALERT_EMAIL="operaciones@ejemplo.com" \
+  bash scripts/provision-observability.sh        # App Insights + alerta
+```
+
+Cada script admite `--validate-only`: imprime el plan sin crear nada. Úsalo la primera vez.
+
+### 2. Configurar el pipeline
+
+```bash
+CENTINELA_GITHUB_REPO="Centinela-App/Centinela" \
+  bash scripts/provision-github-oidc.sh
+```
+
+El script imprime al final los tres *secrets* y las cuatro *variables* que hay que registrar en
+GitHub. **No hay ninguna contraseña entre ellos**: son identificadores, y no sirven sin un token
+firmado por GitHub para este repositorio y esta rama.
+
+### 3. Desplegar
+
+A partir de aquí, cada integración a `main` despliega sola. Para la primera vez, o para
+desplegar a mano:
+
+```bash
+export IMAGE_TAG="$(git rev-parse HEAD)"
+docker build -t "<prefijo>acr.azurecr.io/centinela-api:$IMAGE_TAG" .
+docker build -t "<prefijo>acr.azurecr.io/centinela-scoring:$IMAGE_TAG" ./scoring-function
+az acr login --name "<prefijo>acr"
+docker push "<prefijo>acr.azurecr.io/centinela-api:$IMAGE_TAG"
+docker push "<prefijo>acr.azurecr.io/centinela-scoring:$IMAGE_TAG"
+
+bash scripts/deploy-containers.sh --tag "$IMAGE_TAG"
+bash scripts/verify/verify-deployment-health.sh
+```
+
+### 4. Configurar los secretos de la aplicación
+
+Las tres Container Apps necesitan las cadenas de conexión de Cosmos y de PostgreSQL. Se
+referencian desde Key Vault mediante la identidad de cada aplicación; **no se escriben en
+ningún archivo del repositorio ni en la imagen**:
+
+```bash
+az containerapp secret set -g "$RESOURCE_GROUP" -n "ca-${NAME_PREFIX}-api" \
+  --secrets "cosmos-mongo=keyvaultref:<uri-del-secreto>,identityref:<id-de-la-identidad>"
+
+az containerapp update -g "$RESOURCE_GROUP" -n "ca-${NAME_PREFIX}-api" \
+  --set-env-vars "CENTINELA_COSMOS_MONGO_CONNECTION_STRING=secretref:cosmos-mongo"
+```
+
+## Verificar que funciona
+
+```bash
+# Sin necesidad de Azure: estructura, pruebas, migraciones, ausencia de credenciales
+bash scripts/verify/verify-practices.sh
+
+# Con el sistema desplegado
+bash scripts/verify/verify-deployment-health.sh
+bash scripts/verify/verify-trace.sh <transactionId>
+bash scripts/verify/verify-explainer-correspondence.sh <transactionId>
+bash scripts/verify/verify-image-secrets.sh "<prefijo>acr.azurecr.io/centinela-api:latest"
+```
+
+También hay siete agentes de auditoría en `.claude/agents/` que ejecutan estos scripts y emiten
+un veredicto razonado: `verify-infra`, `verify-secrets`, `verify-containers`, `verify-cicd`,
+`verify-observability`, `verify-explainer` y `verify-practices`.
+
+## Demostrar el escalado
+
+```bash
+# Terminal 1 — observar
+bash scripts/verify/verify-scaling.sh
+
+# Terminal 2 — generar carga desde el banco de pruebas
+# (botón "Generar carga" en centinela-lab, 20 tx/s durante 120 s)
+```
+
+Una configuración de escalado documentada **no es evidencia** de que el escalado ocurra. El
+script guarda la observación real en `docs/evidence/iss-s3-009/`.
+
+## Los dos escenarios de fallo
+
+**Documento ilegible.** Botón homónimo en `centinela-lab`. Abre un caso legítimo y le adjunta un
+PDF corrupto. El caso debe seguir consultable y el resultado del intento queda registrado.
+
+**Explicador detenido.**
+
+```bash
+# Detener
+az containerapp update -g "$RESOURCE_GROUP" -n "ca-${NAME_PREFIX}-explainer" \
+  --min-replicas 0 --max-replicas 0
+
+# Lanzar un escenario fraudulento: el caso se abre y queda en PENDING
+
+# Restablecer: las explicaciones pendientes se generan solas
+az containerapp update -g "$RESOURCE_GROUP" -n "ca-${NAME_PREFIX}-explainer" \
+  --min-replicas 0 --max-replicas 3
+```
+
+## Control de crédito
+
+El consumo alcanza su máximo esta semana: la generación de carga, la construcción repetida de
+imágenes y la ingesta de telemetría coinciden.
+
+```bash
+bash scripts/shutdown-daily.sh          # al cerrar la jornada
+bash scripts/shutdown-daily.sh --start  # al retomar
+```
+
+Apaga lo que factura por tiempo —Container Apps, App Service, PostgreSQL— y deja intacto lo que
+factura por almacenamiento, porque apagarlo equivaldría a destruirlo.
+
+**Costos recurrentes que quedan:** ACR Basic (~0,167 USD/día; no existe un nivel gratuito de ACR)
+y el almacenamiento de Cosmos y Blob, ambos dentro de sus niveles gratuitos.
+
+## Banco de pruebas
+
+Vive en un repositorio aparte: [`centinela-lab`](../centinela-lab). Un botón por causal de
+alerta, un control negativo, el escenario de documento ilegible y el generador de carga. Es un
+cliente externo — no comparte código, base de datos ni despliegue con Centinela.
+
+## Problemas frecuentes
+
+| Síntoma | Causa | Solución |
+|---|---|---|
+| `verify-deployment-health.sh` agota su tiempo | La aplicación tarda ~220 s en arrancar (Spring Boot + Flyway + primera conexión por Private Endpoint) | Subir `CENTINELA_HEALTH_ATTEMPTS`; revisar `az containerapp logs show` |
+| `az containerapp` no se reconoce | Falta la extensión | `az extension add --name containerapp --upgrade` |
+| El caso se abre pero queda `PENDING` | El explicador está a cero réplicas o no puede llegar a Cosmos | Verificar `CENTINELA_COSMOS_MONGO_CONNECTION_STRING` en la Container App del explicador |
+| `verify-trace.sh` no encuentra la transacción | Application Insights tarda 1–3 minutos en indexar | Esperar y reintentar |
+| El escenario de comercio de riesgo no alerta | La lista de riesgo del motor no incluye esa categoría | Revisar `RISKY_CATEGORIES` en la configuración del motor |

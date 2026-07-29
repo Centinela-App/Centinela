@@ -56,6 +56,44 @@ centinela:
       jwk-set-uri: ${CENTINELA_ENTRA_JWK_SET_URI}
   cosmos:
     connection-string: ${CENTINELA_COSMOS_CONNECTION_STRING:}
+
+  # ------------------------------------------------------------------
+  # Semana 3. La misma imagen cumple tres papeles distintos segun que
+  # interruptores encienda la plataforma: API de ingesta y consulta,
+  # explicador de casos, o extractor documental. Todos nacen apagados
+  # para que un despliegue sin configurar no abra conexiones que no usa
+  # ni levante trabajos de fondo inesperados.
+  # ------------------------------------------------------------------
+
+  # Lectura del registro que el motor dejo en Cosmos. Lo necesitan tanto
+  # el explicador como la API de consulta.
+  scoring-record:
+    enabled: ${CENTINELA_SCORING_RECORD_ENABLED:false}
+    cosmos:
+      connection-string: ${CENTINELA_COSMOS_MONGO_CONNECTION_STRING:}
+      database: ${COSMOS_DATABASE:centinela}
+      collection: ${COSMOS_COLLECTION:transactions}
+
+  # API de consulta de analisis y de casos.
+  inquiry:
+    enabled: ${CENTINELA_INQUIRY_ENABLED:false}
+
+  # Explicador de casos. Se despliega como contenedor aparte para poder
+  # detenerlo sin afectar la ingesta.
+  explainer:
+    enabled: ${CENTINELA_EXPLAINER_ENABLED:false}
+    batch-size: ${CENTINELA_EXPLAINER_BATCH_SIZE:25}
+    max-attempts: ${CENTINELA_EXPLAINER_MAX_ATTEMPTS:5}
+    poll-interval-ms: ${CENTINELA_EXPLAINER_POLL_INTERVAL_MS:5000}
+    initial-delay-ms: ${CENTINELA_EXPLAINER_INITIAL_DELAY_MS:10000}
+
+  # Extraccion de datos del documento de identidad.
+  document-verification:
+    enabled: ${CENTINELA_DOCUMENT_VERIFICATION_ENABLED:false}
+    batch-size: ${CENTINELA_DOCUMENT_VERIFICATION_BATCH_SIZE:10}
+    poll-interval-ms: ${CENTINELA_DOCUMENT_VERIFICATION_POLL_INTERVAL_MS:5000}
+    initial-delay-ms: ${CENTINELA_DOCUMENT_VERIFICATION_INITIAL_DELAY_MS:10000}
+
   messaging:
     eventgrid:
       topic-endpoint: ${CENTINELA_EVENTGRID_TOPIC_ENDPOINT:}

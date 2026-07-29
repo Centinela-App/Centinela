@@ -85,6 +85,7 @@ class OpenCaseServiceTest {
                         new FlaggedCaseMessage.TriggeredRuleSummary("VELOCITY", 35),
                         new FlaggedCaseMessage.TriggeredRuleSummary("ATYPICAL_AMOUNT", 50)),
                 OffsetDateTime.parse("2026-07-25T14:59:00Z"),
-                OffsetDateTime.parse("2026-07-25T15:00:00Z"));
+                OffsetDateTime.parse("2026-07-25T15:00:00Z"),
+                "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
     }
 }

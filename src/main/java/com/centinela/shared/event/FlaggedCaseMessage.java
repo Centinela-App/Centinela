@@ -1,5 +1,7 @@
 package com.centinela.shared.event;
 
+import com.centinela.shared.trace.TraceContext;
+
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Objects;
@@ -14,7 +16,8 @@ public record FlaggedCaseMessage(
         int score,
         List<TriggeredRuleSummary> triggeredRules,
         OffsetDateTime occurredAt,
-        OffsetDateTime scoredAt) {
+        OffsetDateTime scoredAt,
+        String traceparent) {
 
     public static final String SCHEMA_VERSION = "flagged-case-v1";
 
@@ -34,6 +37,10 @@ public record FlaggedCaseMessage(
         }
         Objects.requireNonNull(occurredAt, "occurredAt is required");
         Objects.requireNonNull(scoredAt, "scoredAt is required");
+
+        // El caso se abre igual aunque la traza venga rota: un mensaje en cola no se
+        // descarta por telemetria defectuosa.
+        traceparent = TraceContext.parseOrNewRoot(traceparent).toTraceparent();
     }
 
     public record TriggeredRuleSummary(String ruleId, int points) {

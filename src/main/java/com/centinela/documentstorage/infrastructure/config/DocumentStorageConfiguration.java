@@ -42,8 +42,7 @@ public class DocumentStorageConfiguration {
     @Bean
     @Profile("test")
     VerificationDocumentStoragePort noOpVerificationDocumentStoragePort() {
-        return (document, receivedAt) -> {
-        };
+        return (document, receivedAt) -> "test/" + document.documentId() + "/" + document.storedFilename();
     }
 
     @Bean

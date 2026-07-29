@@ -1,0 +1,38 @@
+{
+  "_comment": [
+    "Configuracion del agente de Application Insights.",
+    "La cadena de conexion NO esta aqui: llega por la variable de entorno",
+    "APPLICATIONINSIGHTS_CONNECTION_STRING, que la plataforma inyecta desde Key Vault.",
+    "Este archivo se hornea en la imagen, asi que cualquier valor escrito aqui seria",
+    "recuperable con 'docker history'."
+  ],
+  "role": {
+    "name": "${CENTINELA_ROLE_NAME:centinela-api}"
+  },
+  "sampling": {
+    "percentage": 100
+  },
+  "instrumentation": {
+    "logging": {
+      "level": "INFO"
+    },
+    "micrometer": {
+      "enabled": true
+    },
+    "jdbc": {
+      "enabled": true
+    },
+    "azureSdk": {
+      "enabled": true
+    }
+  },
+  "preview": {
+    "captureLogbackMarker": true,
+    "captureLoggingLevelAsCustomDimension": true,
+    "captureLogbackCodeAttributes": true
+  },
+  "selfDiagnostics": {
+    "destination": "console",
+    "level": "WARN"
+  }
+}

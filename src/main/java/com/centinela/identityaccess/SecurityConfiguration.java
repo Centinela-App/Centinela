@@ -58,6 +58,13 @@ public class SecurityConfiguration {
                         .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/transactions").hasRole("SERVICE")
                         .requestMatchers(HttpMethod.POST, "/api/v1/verification-documents").hasRole("ANALYST")
+                        // Consulta de resultados: la usa el analista para revisar un caso y
+                        // el originador para conocer el veredicto de la transaccion que
+                        // envio. Ambos roles leen; ninguno escribe por esta via.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/transactions/*/analysis")
+                        .hasAnyRole("ANALYST", "SERVICE")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/cases/*")
+                        .hasAnyRole("ANALYST", "SERVICE")
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptionHandling -> exceptionHandling
                         .authenticationEntryPoint(restAuthenticationEntryPoint)

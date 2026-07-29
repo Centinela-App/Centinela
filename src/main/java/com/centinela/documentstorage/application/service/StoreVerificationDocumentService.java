@@ -3,6 +3,7 @@ package com.centinela.documentstorage.application.service;
 import com.centinela.documentstorage.application.command.StoreVerificationDocumentCommand;
 import com.centinela.documentstorage.application.exception.InvalidVerificationDocumentException;
 import com.centinela.documentstorage.application.port.in.StoreVerificationDocumentUseCase;
+import com.centinela.documentstorage.application.port.in.StoreVerificationDocumentUseCase.StoredVerificationDocument;
 import com.centinela.documentstorage.application.port.out.VerificationDocumentStoragePort;
 import com.centinela.documentstorage.domain.model.VerificationDocument;
 
@@ -37,7 +38,7 @@ public final class StoreVerificationDocumentService implements StoreVerification
     }
 
     @Override
-    public String store(StoreVerificationDocumentCommand command) {
+    public StoredVerificationDocument store(StoreVerificationDocumentCommand command) {
         Objects.requireNonNull(command, "command is required");
 
         byte[] content = command.content();
@@ -49,8 +50,8 @@ public final class StoreVerificationDocumentService implements StoreVerification
         String documentId = requireGeneratedId(documentIdSupplier.get());
         VerificationDocument document = new VerificationDocument(documentId, storedFilename, content);
 
-        storagePort.store(document, receptionClock.instant());
-        return documentId;
+        String blobPath = storagePort.store(document, receptionClock.instant());
+        return new StoredVerificationDocument(documentId, blobPath);
     }
 
     static String normalizeFilename(String originalFilename) {

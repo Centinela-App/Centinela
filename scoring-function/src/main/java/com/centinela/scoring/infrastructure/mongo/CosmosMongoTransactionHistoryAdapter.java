@@ -64,7 +64,9 @@ public final class CosmosMongoTransactionHistoryAdapter implements TransactionHi
                 decimal(document.get("amount")),
                 occurredAt(document.get("occurredAt")),
                 location == null ? null : decimal(location.get("latitude")),
-                location == null ? null : decimal(location.get("longitude")));
+                location == null ? null : decimal(location.get("longitude")),
+                location == null ? null : location.getString("city"),
+                location == null ? null : location.getString("countryCode"));
     }
 
     private static OffsetDateTime occurredAt(Object value) {
