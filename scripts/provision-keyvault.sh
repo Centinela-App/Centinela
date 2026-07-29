@@ -72,6 +72,11 @@ compute_web_app_name() {
   hash="$(printf '%s|%s|%s' "$prefix" "$sub_id" "$rg" | sha1sum | cut -c1-6)"
   printf '%s-app-%s' "$prefix" "$hash"
 }
+compute_function_app_name() {
+  local prefix="$1" sub_id="$2" rg="$3" hash
+  hash="$(printf '%s|%s|%s' "$prefix" "$sub_id" "$rg" | sha1sum | cut -c1-6)"
+  printf '%s-scoring-fn-%s' "$prefix" "$hash"
+}
 
 assert_keyvault_name_valid() {
   local name="$1"
@@ -109,6 +114,26 @@ create_vault() {
     log_info "Key Vault '$vault' ya existe."
     return 0
   fi
+
+  # REPRODUCIBILIDAD TRAS destroy-week1.sh: borrar el Resource Group deja el vault
+  # en estado "soft-deleted", y con purge protection activa NO se puede purgar: el
+  # nombre queda reservado durante todo el periodo de retencion. Sin este bloque,
+  # el segundo despliegue con el mismo NAME_PREFIX fallaria para siempre con
+  # "vault name is already in use". Recuperarlo es la unica salida valida y ademas
+  # devuelve el vault con su configuracion original.
+  if az keyvault show-deleted --name "$vault" --location "$LOCATION" >/dev/null 2>&1; then
+    log_warn "Existe un Key Vault BORRADO llamado '$vault' (purge protection impide purgarlo)."
+    log_info "Recuperandolo en lugar de crear uno nuevo..."
+    with_retry 3 az keyvault recover --name "$vault" --location "$LOCATION" \
+      --resource-group "$rg" --output none \
+      || die "No se pudo recuperar el Key Vault borrado '$vault'."
+    # La recuperacion es asincrona: el vault tarda unos segundos en ser consultable.
+    retry_until 10 az keyvault show --name "$vault" --resource-group "$rg" \
+      || die "El Key Vault '$vault' se recupero pero no responde todavia."
+    log_info "Key Vault '$vault' recuperado."
+    return 0
+  fi
+
   log_info "Creando Key Vault '$vault' (RBAC, soft-delete ${RETENTION_DAYS}d, purge protection)..."
   with_retry 3 az keyvault create \
     --name "$vault" \
@@ -200,7 +225,18 @@ grant_app_identities() {
   else
     log_warn "Slot 'staging' sin Managed Identity (ISS-S1-004); omito grant."
   fi
-  log_warn "La identidad de la Function se agregara en ISS-S2-007 (aun no existe)."
+  # Mensaje condicional: era un log_warn fijo que afirmaba "aun no existe" incluso
+  # cuando la Function ya estaba desplegada, lo que confunde al leer el registro.
+  local fn_name fn_pid
+  fn_name="${SCORING_FUNCTION_APP_NAME:-$(compute_function_app_name "$NAME_PREFIX" "$SUBSCRIPTION_ID" "$rg")}"
+  fn_pid="$(az functionapp identity show --name "$fn_name" --resource-group "$rg" \
+    --query principalId -o tsv 2>/dev/null || true)"
+  if [ -n "$fn_pid" ]; then
+    log_info "Otorgando '$SECRETS_USER_ROLE' a la MI de la Function '$fn_name'..."
+    assign_role_scope "$fn_pid" "ServicePrincipal" "$SECRETS_USER_ROLE" "$vault_id"
+  else
+    log_info "La Function aun no existe; su grant se aplicara en ISS-S2-007."
+  fi
 }
 
 # Referencia el secreto como app setting (@Microsoft.KeyVault) en app + slot.

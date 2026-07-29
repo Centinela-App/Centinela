@@ -154,8 +154,7 @@ ensure_private_endpoint() {
       --group-id MongoDB --connection-name "${pe}-plsc" --output none
   fi
 
-  if ! az network private-endpoint dns-zone-group show \
-        --resource-group "$rg" --endpoint-name "$pe" --name default >/dev/null 2>&1; then
+  if ! pe_dns_zone_group_exists "$pe" "$rg"; then
     log_info "Asociando el Private Endpoint a '$DNS_ZONE_MONGO'..."
     with_retry 3 az network private-endpoint dns-zone-group create \
       --resource-group "$rg" --endpoint-name "$pe" --name default \
@@ -194,12 +193,17 @@ ensure_collection() {
   fi
   log_info "Creando coleccion '$COLLECTION_NAME' (shard key=$SHARD_KEY, TTL=${TTL_SECONDS}s)..."
   # --shard: define la particion. INMUTABLE tras la primera escritura.
-  # --ttl:   expiracion automatica de documentos alineada a las ventanas de reglas.
+  # TTL: la API Mongo NO expone '--ttl' (ese flag no existe en az CLI). La
+  #   expiracion automatica se declara como INDICE TTL sobre '_ts', que es el
+  #   mecanismo nativo de Cosmos DB for MongoDB. Se incluye tambien el indice
+  #   obligatorio de '_id'.
+  local idx
+  idx="$(printf '[{"key":{"keys":["_id"]}},{"key":{"keys":["_ts"]},"options":{"expireAfterSeconds":%s}}]' "$TTL_SECONDS")"
   with_retry 3 az cosmosdb mongodb collection create \
     --account-name "$account" --resource-group "$rg" \
     --database-name "$DATABASE_NAME" --name "$COLLECTION_NAME" \
     --shard "$SHARD_KEY" \
-    --ttl "$TTL_SECONDS" \
+    --idx "$idx" \
     --output none
   log_info "Coleccion creada."
 }
@@ -229,6 +233,10 @@ verify_all_resources() {
   pe="${account}-mongo-pe"
   az network private-endpoint show --name "$pe" --resource-group "$rg" >/dev/null 2>&1 \
     || die "No existe el Private Endpoint '$pe'."
+  # Un PE sin registro A deja a Cosmos irresoluble por nombre dentro de la VNet.
+  # Verificarlo es lo que distingue "creado" de "realmente alcanzable".
+  retry_until 8 private_dns_has_a_records "$DNS_ZONE_MONGO" "$rg" \
+    || die "El PE '$pe' existe pero '$DNS_ZONE_MONGO' no tiene registros A: Cosmos no seria resoluble desde la VNet."
 
   log_info "  OK cuenta:       $account"
   log_info "  OK base:         $DATABASE_NAME"

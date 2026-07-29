@@ -40,7 +40,7 @@ fail() { RESULTS+=("FAIL  $*"); FAIL=$((FAIL + 1)); log_error "$*"; }
 print_report() {
   printf '\n================ ISS-S2-005 / TEST-S2-006 ================\n'
   for r in "${RESULTS[@]}"; do printf '%s\n' "$r"; done
-  printf '------------------------------------------------------------\n'
+  printf '%s\n' '------------------------------------------------------------'
   printf 'Resumen: %d PASS / %d FAIL\n' "$PASS" "$FAIL"
   printf '============================================================\n'
 }

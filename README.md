@@ -195,34 +195,74 @@ centinela/                      <-- Carpeta raíz del repositorio
 
 Este proyecto utiliza automatización para eliminar el error humano.
 
-### Despliegue de infraestructura
+### Despliegue de infraestructura (Semana 1 + Semana 2, un solo comando)
 
-1. Clona este repositorio.
-2. Inicia sesión en Azure:
-   ```bash
-   az login
-   ```
-3. Navega a la carpeta de infraestructura:
-   ```bash
-   cd infra
-   ```
-4. Ejecuta el script de despliegue automatizado:
-   ```bash
-   chmod +x deploy.sh
-   ./deploy.sh
-   ```
+`scripts/deploy-all.sh` levanta toda la infraestructura entregada hasta hoy, en orden
+de dependencias e idempotente.
+
+**Guía completa de despliegue: [DESPLIEGUE.md](DESPLIEGUE.md)** — requisitos por sistema
+operativo, instalación de dependencias, parámetros, verificación y destrucción, con todos
+los comandos copiables. El runbook por issue está en
+[docs/4_Infraestructura_y_Despliegue/5_Runbook_Despliegue_Completo.md](docs/4_Infraestructura_y_Despliegue/5_Runbook_Despliegue_Completo.md).
+
+```bash
+# 1. Clonar y situarse en la entrega estable
+git clone https://github.com/Centinela-App/Centinela.git && cd Centinela
+git checkout develop
+
+# 2. Iniciar sesión y fijar la suscripción
+az login
+az account set --subscription "<subscription-id>"
+
+# 3. Parámetros locales (nunca se commitea .env)
+cp .env.example .env && nano .env     # SUBSCRIPTION_ID, LOCATION, RESOURCE_GROUP, NAME_PREFIX, APP_SERVICE_SKU
+
+# 4. Ensayo en seco: valida herramientas, sesión, región y SKU sin crear nada
+bash scripts/deploy-all.sh --validate-only
+
+# 5. Despliegue completo (40-60 min)
+bash scripts/deploy-all.sh --yes --with-tests
+
+# 6. Al terminar la demostración: destruir para no consumir crédito
+bash scripts/destroy-week1.sh --yes --wait
+```
+
+Para seguir el avance en vivo, en **otra** terminal:
+
+```bash
+bash scripts/watch-deploy.sh
+# [###################.......................]  47%   8/17  S2 PostgreSQL privado  (3s)
+```
+
+> **Requisitos:** Azure CLI, JDK 21 (`JAVA_HOME`), Maven, `git`, `psql` y `jq`. En Windows
+> los instaladores no añaden `psql` ni `jq` al `PATH`; los scripts los localizan solos en
+> las rutas estándar, así que no hace falta configurar nada a mano.
+
+> **Sobre el acceso privado.** Cosmos, PostgreSQL, Key Vault y Storage tienen el acceso
+> público deshabilitado por diseño. Desde un runner unido a la VNet (Cloud Shell
+> inyectado, jumpbox o VPN) el despliegue usa la ruta privada. Desde una máquina externa,
+> el bootstrap de PostgreSQL abre una **ventana temporal acotada a la IP del operador** y
+> la cierra al terminar; el estado final es siempre `publicNetworkAccess=Disabled`.
+> Detalles y límites en [DESPLIEGUE.md](DESPLIEGUE.md#7-nota-sobre-la-conexión-a-postgresql).
+
+> **¿Aprendiendo Azure?** [GUIA_TECNICA_SCRIPTS.md](GUIA_TECNICA_SCRIPTS.md) explica qué
+> hace cada script, cómo funciona por dentro y **cómo harías lo mismo a mano** con `az` o
+> en el Portal, además de los conceptos base (control plane vs data plane, Managed
+> Identity, RBAC por ámbito, Private Endpoints y DNS privado).
+
+> **Errores corregidos.** El endurecimiento de estos scripts está documentado en
+> [docs/4_Infraestructura_y_Despliegue/6_Informe_Errores_Corregidos.md](docs/4_Infraestructura_y_Despliegue/6_Informe_Errores_Corregidos.md):
+> 30 defectos por causa raíz, incluidos cuatro que producían despliegues aparentemente
+> exitosos pero funcionalmente rotos.
 
 ### Ejecución local (desarrollo)
 
 ```bash
-# Backend
-cd backend
-./mvnw spring-boot:run
+# Backend (Spring Boot; requiere Java 21 y Maven)
+mvn spring-boot:run
 
-# Frontend
-cd frontend
-npm install
-npm run dev
+# Motor de scoring (Azure Function)
+cd scoring-function && mvn clean verify
 ```
 
 ## 13. Variables de entorno y secretos

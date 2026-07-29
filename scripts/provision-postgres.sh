@@ -118,7 +118,10 @@ create_server() {
   log_info "Creando servidor Postgres '$server' ($TIER/$SKU, ${STORAGE_GB}GiB, v$PG_VERSION)..."
   # --public-access None: modo de red "publico sin reglas de firewall" (habilita
   #   Private Endpoint posterior); NO abre el servidor a internet.
-  # --active-directory-auth Enabled: habilita autenticacion Entra ID.
+  # --microsoft-entra-auth Enabled: habilita autenticacion Entra ID. Este flag se
+  #   llamaba --active-directory-auth; az CLI lo renombro y ya NO acepta el viejo.
+  # Sin --high-availability: ese flag tampoco existe ya en 'create', y el tier
+  #   Burstable (B1ms) no soporta HA. El valor por defecto es Disabled.
   # La password efimera solo satisface la creacion; se anula en harden_server.
   with_retry 3 az postgres flexible-server create \
     --name "$server" \
@@ -131,8 +134,7 @@ create_server() {
     --public-access None \
     --backup-retention "$BACKUP_RETENTION" \
     --geo-redundant-backup Disabled \
-    --high-availability Disabled \
-    --active-directory-auth Enabled \
+    --microsoft-entra-auth Enabled \
     --admin-user "$ADMIN_USER" \
     --admin-password "$pwd" \
     --tags "${TAGS[@]}" \
@@ -153,28 +155,48 @@ ensure_entra_admin() {
     return 0
   fi
 
-  if az postgres flexible-server ad-admin list \
-        --server-name "$server" --resource-group "$rg" \
-        --query "[?objectId=='$oid'] | [0].objectId" -o tsv 2>/dev/null | grep -q "$oid"; then
+  if entra_admin_exists "$server" "$rg" "$oid"; then
     log_info "Admin Entra ID ya configurado ($(mask "$oid"))."
     return 0
   fi
 
   log_info "Asignando admin Entra ID ($(mask "$oid"))..."
-  with_retry 3 az postgres flexible-server ad-admin create \
+  if with_retry 3 az postgres flexible-server microsoft-entra-admin create \
+      --server-name "$server" --resource-group "$rg" \
+      --display-name "${upn:-$ADMIN_USER}" --object-id "$oid" --type User \
+      --output none; then
+    return 0
+  fi
+
+  # La creacion puede FALLAR habiendo surtido efecto: Azure aplica el cambio y
+  # despues devuelve InternalServerError. El reintento choca entonces contra
+  # '42710: role already exists' y el paso muere pese a estar el admin creado.
+  # Por eso no se confia en el codigo de salida, se consulta el estado real.
+  if entra_admin_exists "$server" "$rg" "$oid"; then
+    log_warn "La creacion reporto error, pero el admin Entra SI quedo configurado. Se continua."
+    return 0
+  fi
+  die "No se pudo configurar el admin Entra ID en '$server'."
+}
+
+# 'ad-admin' fue renombrado a 'microsoft-entra-admin'; az CLI ya no reconoce el viejo.
+entra_admin_exists() {
+  local server="$1" rg="$2" oid="$3"
+  az postgres flexible-server microsoft-entra-admin list \
     --server-name "$server" --resource-group "$rg" \
-    --display-name "${upn:-$ADMIN_USER}" --object-id "$oid" --type User \
-    --output none
+    --query "[?objectId=='$oid'] | [0].objectId" -o tsv 2>/dev/null | grep -q "$oid"
 }
 
 # Deshabilita password auth (anula la password efimera) y cierra el acceso publico.
 harden_server() {
   local server="$1" rg="$2"
   log_info "Endureciendo servidor: password-auth Disabled + public-network-access Disabled..."
+  # OJO: en 'update' el flag es --public-access (Enabled|Disabled). No existe
+  # --public-network-access: ese es solo el nombre de la propiedad al leerla.
   with_retry 3 az postgres flexible-server update \
     --name "$server" --resource-group "$rg" \
     --password-auth Disabled \
-    --public-network-access Disabled \
+    --public-access Disabled \
     --output none
 }
 
@@ -219,8 +241,7 @@ ensure_private_endpoint() {
       --output none
   fi
 
-  if az network private-endpoint dns-zone-group show \
-        --resource-group "$rg" --endpoint-name "$pe" --name default >/dev/null 2>&1; then
+  if pe_dns_zone_group_exists "$pe" "$rg"; then
     log_info "DNS zone group del PE ya existe (registro A automatico)."
   else
     log_info "Registrando IP privada en la zona DNS (dns-zone-group)..."
@@ -251,6 +272,10 @@ verify_all_resources() {
 
   az network private-endpoint show --name "$pe" --resource-group "$rg" >/dev/null 2>&1 \
     || die "No existe el Private Endpoint '$pe'."
+  # Un PE sin registro A deja al servidor irresoluble por nombre dentro de la VNet.
+  # Verificarlo es lo que distingue "creado" de "realmente alcanzable".
+  retry_until 8 private_dns_has_a_records "$DNS_ZONE_PG" "$rg" \
+    || die "El PE '$pe' existe pero '$DNS_ZONE_PG' no tiene registros A: PostgreSQL no seria resoluble desde la VNet."
 
   log_info "  OK servidor:        $server"
   log_info "  SKU:                $sku"

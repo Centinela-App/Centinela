@@ -86,14 +86,24 @@ compute_keyvault_name() {
   hash="$(printf '%s|%s|%s' "$prefix" "$sub_id" "$rg" | sha1sum | cut -c1-6)"
   printf '%s-kv-%s' "$prefix" "$hash"
 }
+compute_function_app_name() {
+  local prefix="$1" sub_id="$2" rg="$3" hash
+  hash="$(printf '%s|%s|%s' "$prefix" "$sub_id" "$rg" | sha1sum | cut -c1-6)"
+  printf '%s-scoring-fn-%s' "$prefix" "$hash"
+}
 
 # --- Guard de minimo privilegio ------------------------------------------------
 
 assert_not_forbidden_role() {
   local role="$1" f
   for f in "${FORBIDDEN_ROLES[@]}"; do
-    [ "$role" = "$f" ] && die "REGLA DURA violada: intento de asignar rol prohibido '$role'."
+    if [ "$role" = "$f" ]; then
+      die "REGLA DURA violada: intento de asignar rol prohibido '$role'."
+    fi
   done
+  # 'return 0' explicito: sin el, el ultimo '[ ... ]' falso deja estado 1 y
+  # 'set -e' aborta el script en silencio al validar un rol permitido.
+  return 0
 }
 
 # --- Asignacion idempotente ----------------------------------------------------
@@ -192,7 +202,7 @@ main() {
     assign_role_scope "$prod_pid"    "ServicePrincipal" "$KV_SECRETS_USER_ROLE" "$kv_id"
     assign_role_scope "$staging_pid" "ServicePrincipal" "$KV_SECRETS_USER_ROLE" "$kv_id"
     
-    fn_app_name="${SCORING_FUNCTION_APP_NAME:-${NAME_PREFIX}-scoring-fn}"
+    fn_app_name="${SCORING_FUNCTION_APP_NAME:-$(compute_function_app_name "$NAME_PREFIX" "$SUBSCRIPTION_ID" "$RESOURCE_GROUP")}"
     fn_pid="$(az functionapp identity show --name "$fn_app_name" --resource-group "$RESOURCE_GROUP" --query principalId -o tsv 2>/dev/null || true)"
     if [ -n "$fn_pid" ]; then
       log_info "Asignando '$KV_SECRETS_USER_ROLE' a la MI de Function App ($fn_app_name)..."

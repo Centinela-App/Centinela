@@ -42,8 +42,14 @@ main() {
   [ "$active_sub" = "$SUBSCRIPTION_ID" ] \
     || die "Suscripcion activa ($(mask "$active_sub")) != SUBSCRIPTION_ID ($(mask "$SUBSCRIPTION_ID"))."
 
-  az group show --name "$RESOURCE_GROUP" >/dev/null 2>&1 \
-    || die "Resource Group '$RESOURCE_GROUP' no existe. Despliega primero Semana 1 (deploy-week1.sh)."
+  # En --validate-only el Resource Group todavia puede no existir: el ensayo en seco
+  # debe poder correr en una maquina limpia, ANTES de desplegar Semana 1. Solo el
+  # despliegue real exige que ya exista.
+  if ! az group show --name "$RESOURCE_GROUP" >/dev/null 2>&1; then
+    [ "$VALIDATE_ONLY" -eq 1 ] \
+      || die "Resource Group '$RESOURCE_GROUP' no existe. Despliega primero Semana 1 (deploy-week1.sh)."
+    log_warn "El Resource Group '$RESOURCE_GROUP' aun no existe; lo creara deploy-week1.sh. En --validate-only no es un error."
+  fi
 
   log_info "Plan de despliegue de Semana 2:"
   log_info "  Suscripcion   : $(mask "$SUBSCRIPTION_ID")"
@@ -59,7 +65,14 @@ main() {
 
   for step in "${PROVISION_STEPS[@]}"; do
     if [ -f "$SCRIPT_DIR/$step" ]; then
-      log_info "Ejecutando paso: $step"; bash "$SCRIPT_DIR/$step"
+      log_info "Ejecutando paso: $step"
+      # Se captura el codigo explicitamente: sin esto, un 'set -e' dentro del
+      # sub-script aborta sin decir cual paso murio ni con que codigo.
+      local step_status=0
+      bash "$SCRIPT_DIR/$step" || step_status=$?
+      if [ "$step_status" -ne 0 ]; then
+        die "El paso '$step' fallo con codigo $step_status. Revisa el registro anterior a esta linea."
+      fi
     else
       log_warn "Paso pendiente (issue futura): $step"
     fi

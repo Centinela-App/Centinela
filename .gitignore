@@ -19,6 +19,9 @@ target/
 
 # === Logs y temporales ===
 *.log
+# Registros locales de scripts/deploy-all.sh y de los runbooks de evidencia.
+deploy-run/
+evidence-run/
 # Excepcion: los logs de evidencia SANITIZADOS de la prueba de cierre (ISS-S1-014)
 # si se versionan (deployment.log, cleanup.log bajo docs/evidence/final/<runId>/).
 !docs/evidence/**/*.log
