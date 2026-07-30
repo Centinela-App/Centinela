@@ -189,7 +189,11 @@ Detalles de diseño que importan:
 
 - **Cada ejecución usa una cuenta nueva** (`acc-lab-<8 hex>`) y **siembra
   historial primero**: las reglas comparan contra el comportamiento previo de
-  la cuenta, y sin historial el escenario probaría otra cosa.
+  la cuenta, y sin historial el escenario probaría otra cosa. Antes de enviar
+  la transacción observada, el lab espera a que el análisis de cada
+  transacción previa exista (el historial debe estar *asentado*: los eventos
+  se procesan en paralelo y sin esta espera el motor puntuaría contra un
+  pasado aún no visible).
 - La carga sostenida usa transacciones inocuas con cuentas distintas para no
   ensuciar la base de casos, y cuenta los `429` aparte: son el rate limiter
   funcionando, no un error.
@@ -410,7 +414,10 @@ vuelve a ejecutar; converge sin duplicar) y deja el registro de cada paso en
 
 1. Registro de resource providers que falten (suscripciones nuevas no los tienen).
 2. Grupo de recursos y red privada (subred ACA /23 + subred de private endpoints).
-3. Storage (contenedores y colas de producción y staging).
+3. Storage (contenedores y colas de producción y staging) **y sus private
+   endpoints de Blob y Queue** — sin ellos, el host de Functions y la API
+   reciben `AuthorizationFailure` porque el Storage nace con el acceso público
+   bloqueado.
 4. Cosmos DB Mongo (privado, free tier) y PostgreSQL Flexible (privado, solo Entra).
 5. Key Vault (RBAC) y secreto de Cosmos.
 6. Identidad de datos `id-cent-apps` (primera pasada: Storage y Key Vault).
@@ -426,9 +433,13 @@ vuelve a ejecutar; converge sin duplicar) y deja el registro de cada paso en
 10. Observabilidad (App Insights, alerta al correo indicado).
 11. `az acr build` de las dos imágenes (API y motor) dentro de Azure.
 12. `deploy-containers.sh`: crea/actualiza las tres Container Apps, espera el
-    arranque del host de Functions, recupera su system key del Key Vault
-    (lectura temporal conceder-usar-revocar) y **cablea la suscripción de
-    Event Grid** hacia el webhook del motor.
+    arranque del host de Functions, **fuerza la materialización de sus claves**
+    (el host las genera de forma perezosa: una petición al webhook persiste la
+    master key y la system key de Event Grid se crea vía la API de
+    administración), recupera la system key del Key Vault (lectura temporal
+    conceder-usar-revocar) y **cablea la suscripción de Event Grid** hacia el
+    webhook del motor. El explicador se despliega con mínimo 1 réplica: es un
+    worker sin ingreso y con mínimo 0 nunca despertaría.
 13. Verificación de salud (`/actuator/health/readiness`).
 14. Con `--with-lab`: ejecuta `scripts/deploy-lab.sh` del repositorio vecino —
     identidad `id-cent-lab`, app roles `SERVICE`+`ANALYST`, AcrPull, imagen y
