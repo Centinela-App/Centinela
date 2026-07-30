@@ -86,7 +86,7 @@ az login             # abre el navegador; inicia sesion con tu cuenta de Azure
 az account show      # confirma que la suscripcion activa es la correcta
 
 # Fija la suscripcion explicitamente si tienes varias:
-az account set --subscription "44dc85d0-5df9-46bb-a378-6f629c803999"
+az account set --subscription "<SUBSCRIPTION_ID>"   # reemplaza por el ID de tu suscripcion
 ```
 
 Clona el repositorio y prepara los parámetros:
@@ -100,7 +100,7 @@ cp .env.example .env
 Edita `.env` con tus valores. Los cinco obligatorios:
 
 ```bash
-SUBSCRIPTION_ID="44dc85d0-5df9-46bb-a378-6f629c803999"
+SUBSCRIPTION_ID="<TU_SUBSCRIPTION_ID>"
 LOCATION="eastus2"
 RESOURCE_GROUP="rg-centinela-week1"
 NAME_PREFIX="cent"          # 3-11 minusculas/numeros
@@ -359,10 +359,11 @@ done
 ### Paso 2-bis — Alternativa por REST (si el paso 2 da `MissingSubscription`)
 
 ```bash
-# IDs de rol (constantes de Azure):
-#   Owner        8e3af657-a8ff-443c-a75c-2fe8c4bcb635
-#   Contributor  b24988ac-6180-42a0-ab88-20f7382dd24c
+# Los IDs de rol son constantes de Azure, pero NO los versionamos aqui: el barrido
+# de secretos de CI rechaza cualquier GUID en el repositorio. Se obtienen en caliente.
 SUB=$(az account show --query id -o tsv)
+OWNER_ROLE_ID=$(az role definition list --name "Owner" --query "[0].name" -o tsv)
+CONTRIB_ROLE_ID=$(az role definition list --name "Contributor" --query "[0].name" -o tsv)
 
 asignar_rol() {  # uso: asignar_rol <object-id> <role-id>
   local oid="$1" role="$2" guid
@@ -373,11 +374,11 @@ asignar_rol() {  # uso: asignar_rol <object-id> <role-id>
 }
 
 OID=$(az ad user list --filter "mail eq 'carlosres1995@gmail.com'" --query "[0].id" -o tsv)
-asignar_rol "$OID" "8e3af657-a8ff-443c-a75c-2fe8c4bcb635"   # Owner
+asignar_rol "$OID" "$OWNER_ROLE_ID"   # Owner
 
 for EMAIL in stivencolombia@gmail.com lmejiacoronado@gmail.com estebanbl090@gmail.com; do
   OID=$(az ad user list --filter "mail eq '$EMAIL'" --query "[0].id" -o tsv)
-  asignar_rol "$OID" "b24988ac-6180-42a0-ab88-20f7382dd24c"  # Contributor
+  asignar_rol "$OID" "$CONTRIB_ROLE_ID"  # Contributor
 done
 ```
 
