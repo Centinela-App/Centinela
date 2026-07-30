@@ -122,6 +122,22 @@ GitHub Actions con **OIDC federado — cero credenciales almacenadas** (`ADR-008
 
 Aprovisionamiento de la identidad del pipeline: `bash scripts/provision-github-oidc.sh`.
 
+### Activar el despliegue automático
+
+Las etapas de `cd.yml` que tocan Azure están detrás de un interruptor, para que un
+*merge* a `main` sin OIDC configurado ejecute CI y se detenga limpio en lugar de fallar.
+Para activarlo, una sola vez, tras registrar los *secrets* que imprime
+`provision-github-oidc.sh`:
+
+```
+# Settings → Secrets and variables → Actions → Variables
+AZURE_DEPLOY_ENABLED = true
+```
+
+Desde ese momento, cada integración a `main` despliega sola. Para un primer despliegue
+controlado antes de activarlo, usa el disparo manual (`workflow_dispatch`), que ignora el
+interruptor a propósito.
+
 ---
 
 ## Verificación
