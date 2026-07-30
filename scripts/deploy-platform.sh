@@ -314,6 +314,13 @@ infraestructura() {
   # Storage ANTES de la identidad: provision-containerapps-identity.sh busca la
   # cuenta y aborta si no existe. Este es el paso que faltaba en el README.
   run_step "storage-contenedores-colas" bash "$SCRIPT_DIR/provision-storage.sh"
+
+  # Private endpoints de Blob y Queue. El Storage nace con el acceso publico
+  # bloqueado, y sin estos dos endpoints el host de Functions y la API reciben
+  # AuthorizationFailure al tocar blobs y colas — fallo observado en despliegue
+  # real: el host arrancaba pero quedaba Unhealthy y nunca publicaba su system
+  # key, y el cableado de Event Grid moria esperandola.
+  run_step "private-endpoints-blob-queue" bash "$SCRIPT_DIR/configure-private-endpoints.sh"
   run_step "cosmos-mongo"               bash "$SCRIPT_DIR/provision-cosmos.sh"
   run_step "postgresql-privado"         bash "$SCRIPT_DIR/provision-postgres.sh"
   run_step "key-vault"                  bash "$SCRIPT_DIR/provision-keyvault.sh"
