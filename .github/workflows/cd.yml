@@ -61,10 +61,28 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Etapas 3 y 4.
+  #
+  # INTERRUPTOR DE DESPLIEGUE. Estas etapas tocan Azure y por tanto necesitan los
+  # secrets de OIDC registrados en el repositorio. Se activan solo cuando la
+  # variable de repositorio AZURE_DEPLOY_ENABLED vale 'true'.
+  #
+  # Por que un interruptor y no siempre: si estas etapas corrieran sin los secrets
+  # —el estado de un repo recien clonado o antes de configurar OIDC— fallarian
+  # DESPUES de un merge exitoso, ensuciando el historial de main con una corrida
+  # roja que no indica ningun problema del codigo. Con el interruptor, un merge
+  # sin configurar despliegue ejecuta CI y se detiene limpio; en cuanto se
+  # registran los secrets y se pone AZURE_DEPLOY_ENABLED=true, el MISMO push
+  # despliega automaticamente. El cableado del entregable 1 esta intacto; solo
+  # espera su configuracion de una vez.
+  #
+  # El disparo manual (workflow_dispatch) ignora el interruptor a proposito: sirve
+  # para el primer despliegue controlado, cuando se quiere ver correr el flujo una
+  # vez antes de dejarlo automatico.
   # ---------------------------------------------------------------------------
   publicar-imagenes:
     name: Construir y publicar imagenes
     needs: verificar
+    if: ${{ vars.AZURE_DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -143,6 +161,10 @@ jobs:
   desplegar:
     name: Desplegar en Container Apps
     needs: publicar-imagenes
+    # Explicito por legibilidad: un job cuyo 'needs' se salto ya se saltaria solo,
+    # pero dejar la condicion aqui hace evidente al leer el archivo que este job
+    # tambien esta detras del interruptor.
+    if: ${{ vars.AZURE_DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: produccion
