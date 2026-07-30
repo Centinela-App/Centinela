@@ -7,7 +7,7 @@
     "recuperable con 'docker history'."
   ],
   "role": {
-    "name": "${CENTINELA_ROLE_NAME:centinela-api}"
+    "name": "${CENTINELA_ROLE_NAME}"
   },
   "sampling": {
     "percentage": 100

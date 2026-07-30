@@ -28,7 +28,7 @@
         <!-- Usados por azure-functions-maven-plugin al empaquetar/desplegar. -->
         <functionAppName>cent-scoring-fn</functionAppName>
         <functionAppRegion>eastus2</functionAppRegion>
-        <functionResourceGroup>rg-centinela-week1</functionResourceGroup>
+        <functionResourceGroup>rg-centinela</functionResourceGroup>
         <stagingDirectory>${project.build.directory}/azure-functions/${functionAppName}</stagingDirectory>
     </properties>
 

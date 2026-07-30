@@ -66,8 +66,6 @@ centinela:
       issuer-uri: ${CENTINELA_ENTRA_ISSUER_URI}
       audience: ${CENTINELA_ENTRA_AUDIENCE}
       jwk-set-uri: ${CENTINELA_ENTRA_JWK_SET_URI}
-  cosmos:
-    connection-string: ${CENTINELA_COSMOS_CONNECTION_STRING:}
 
   # ------------------------------------------------------------------
   # Semana 3. La misma imagen cumple tres papeles distintos segun que

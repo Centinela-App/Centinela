@@ -147,9 +147,38 @@ deploy_api() {
   local app="ca-${NAME_PREFIX}-api"
   local image="${registry}/centinela-api:${IMAGE_TAG}"
 
+  # Un solo juego de variables para create Y update: si solo se fijaran en el
+  # create, cambiar la configuracion (audiencia, endpoint, umbral) exigiria
+  # borrar y recrear la app — y el pipeline usa siempre la ruta de update.
+  local -a env_vars=(
+    AZURE_CLIENT_ID="$APPS_CLIENT_ID"
+    CENTINELA_STORAGE_ACCOUNT="$STORAGE_ACCOUNT"
+    CENTINELA_RAW_TRANSACTIONS_CONTAINER=raw-transactions-production
+    CENTINELA_VERIFICATION_DOCUMENTS_CONTAINER=verification-documents-production
+    CENTINELA_FLAGGED_CASES_QUEUE=flagged-cases-production
+    CENTINELA_EVENTGRID_TOPIC_ENDPOINT="$EVENTGRID_ENDPOINT"
+    CENTINELA_POSTGRES_JDBC_URL="$PG_JDBC_URL"
+    CENTINELA_POSTGRES_USER="${NAME_PREFIX}_apps"
+    CENTINELA_COSMOS_MONGO_CONNECTION_STRING=secretref:cosmos-mongo
+    CENTINELA_ENTRA_ISSUER_URI="https://login.microsoftonline.com/${TENANT_ID}/v2.0"
+    CENTINELA_ENTRA_AUDIENCE="${ENTRA_APP_ID}"
+    CENTINELA_ENTRA_JWK_SET_URI="https://login.microsoftonline.com/${TENANT_ID}/discovery/v2.0/keys"
+    APPLICATIONINSIGHTS_CONNECTION_STRING="$INSIGHTS_CONNECTION"
+    CENTINELA_SCORING_RECORD_ENABLED=true
+    CENTINELA_INQUIRY_ENABLED=true
+    CENTINELA_EXPLAINER_ENABLED=false
+    CENTINELA_DOCUMENT_VERIFICATION_ENABLED=false
+    CENTINELA_ROLE_NAME=centinela-api
+  )
+
   if app_exists "$app"; then
     log_info "Actualizando '$app' a $image"
-    az containerapp update -g "$RESOURCE_GROUP" -n "$app" --image "$image" --output none
+    az containerapp secret set -g "$RESOURCE_GROUP" -n "$app" \
+      --secrets "cosmos-mongo=keyvaultref:${COSMOS_SECRET_URI},identityref:${APPS_IDENTITY_ID}" \
+      --output none
+    az containerapp update -g "$RESOURCE_GROUP" -n "$app" --image "$image" \
+      --set-env-vars "${env_vars[@]}" \
+      --output none
   else
     log_info "Creando '$app'"
     az containerapp create \
@@ -161,25 +190,7 @@ deploy_api() {
       --cpu "$CPU_PER_REPLICA" --memory "$MEMORY_PER_REPLICA" \
       --min-replicas "$API_MIN_REPLICAS" --max-replicas "$API_MAX_REPLICAS" \
       --secrets "cosmos-mongo=keyvaultref:${COSMOS_SECRET_URI},identityref:${APPS_IDENTITY_ID}" \
-      --env-vars \
-        AZURE_CLIENT_ID="$APPS_CLIENT_ID" \
-        CENTINELA_STORAGE_ACCOUNT="$STORAGE_ACCOUNT" \
-        CENTINELA_RAW_TRANSACTIONS_CONTAINER=raw-transactions-production \
-        CENTINELA_VERIFICATION_DOCUMENTS_CONTAINER=verification-documents-production \
-        CENTINELA_FLAGGED_CASES_QUEUE=flagged-cases-production \
-        CENTINELA_EVENTGRID_TOPIC_ENDPOINT="$EVENTGRID_ENDPOINT" \
-        CENTINELA_POSTGRES_JDBC_URL="$PG_JDBC_URL" \
-        CENTINELA_POSTGRES_USER="${NAME_PREFIX}_apps" \
-        CENTINELA_COSMOS_MONGO_CONNECTION_STRING=secretref:cosmos-mongo \
-        CENTINELA_ENTRA_ISSUER_URI="https://login.microsoftonline.com/${TENANT_ID}/v2.0" \
-        CENTINELA_ENTRA_AUDIENCE="${ENTRA_APP_ID}" \
-        CENTINELA_ENTRA_JWK_SET_URI="https://login.microsoftonline.com/${TENANT_ID}/discovery/v2.0/keys" \
-        APPLICATIONINSIGHTS_CONNECTION_STRING="$INSIGHTS_CONNECTION" \
-        CENTINELA_SCORING_RECORD_ENABLED=true \
-        CENTINELA_INQUIRY_ENABLED=true \
-        CENTINELA_EXPLAINER_ENABLED=false \
-        CENTINELA_DOCUMENT_VERIFICATION_ENABLED=false \
-        CENTINELA_ROLE_NAME=centinela-api \
+      --env-vars "${env_vars[@]}" \
       --output none
   fi
 
@@ -232,9 +243,39 @@ deploy_scoring() {
   with_retry 5 assign_role "Key Vault Secrets Officer" "$apps_principal" "$vault_id" \
     || die "El host no puede persistir sus system keys sin Secrets Officer en el vault."
 
+  # Mismo patron que deploy_api: un solo juego de variables para create y
+  # update. El default del umbral es 50, alineado con DEFAULT_THRESHOLD del
+  # motor y con local.settings.json; antes aqui decia 60 y lo desplegado
+  # puntuaba distinto que lo probado.
+  local -a env_vars=(
+    FUNCTIONS_WORKER_RUNTIME=java
+    AzureWebJobsStorage__accountName="$STORAGE_ACCOUNT"
+    AzureWebJobsStorage__credential=managedidentity
+    AzureWebJobsStorage__clientId="$APPS_CLIENT_ID"
+    AzureWebJobsSecretStorageType=keyvault
+    AzureWebJobsSecretStorageKeyVaultUri="https://${KEY_VAULT}.vault.azure.net/"
+    AzureWebJobsSecretStorageKeyVaultClientId="$APPS_CLIENT_ID"
+    AZURE_CLIENT_ID="$APPS_CLIENT_ID"
+    KEY_VAULT_URI="https://${KEY_VAULT}.vault.azure.net/"
+    CENTINELA_STORAGE_ACCOUNT="$STORAGE_ACCOUNT"
+    CENTINELA_RAW_TRANSACTIONS_CONTAINER_PRODUCTION=raw-transactions-production
+    CENTINELA_RAW_TRANSACTIONS_CONTAINER_STAGING=raw-transactions-staging
+    CENTINELA_FLAGGED_CASES_QUEUE_PRODUCTION=flagged-cases-production
+    CENTINELA_FLAGGED_CASES_QUEUE_STAGING=flagged-cases-staging
+    COSMOS_DATABASE=centinela
+    COSMOS_COLLECTION=transactions
+    SCORING_THRESHOLD="${SCORING_THRESHOLD:-50}"
+    RISKY_MERCHANTS="${RISKY_MERCHANTS:-Casino Royale,BetCrypto}"
+    RISKY_CATEGORIES="${RISKY_CATEGORIES:-gambling,crypto,pawn_shop}"
+    APPLICATIONINSIGHTS_CONNECTION_STRING="$INSIGHTS_CONNECTION"
+    CENTINELA_ROLE_NAME=centinela-scoring
+  )
+
   if app_exists "$app"; then
     log_info "Actualizando '$app' a $image"
-    az containerapp update -g "$RESOURCE_GROUP" -n "$app" --image "$image" --output none
+    az containerapp update -g "$RESOURCE_GROUP" -n "$app" --image "$image" \
+      --set-env-vars "${env_vars[@]}" \
+      --output none
   else
     log_info "Creando '$app'"
     az containerapp create \
@@ -245,28 +286,7 @@ deploy_scoring() {
       --target-port 80 --ingress external \
       --cpu "$CPU_PER_REPLICA" --memory "$MEMORY_PER_REPLICA" \
       --min-replicas "$SCORING_MIN_REPLICAS" --max-replicas "$SCORING_MAX_REPLICAS" \
-      --env-vars \
-        FUNCTIONS_WORKER_RUNTIME=java \
-        AzureWebJobsStorage__accountName="$STORAGE_ACCOUNT" \
-        AzureWebJobsStorage__credential=managedidentity \
-        AzureWebJobsStorage__clientId="$APPS_CLIENT_ID" \
-        AzureWebJobsSecretStorageType=keyvault \
-        AzureWebJobsSecretStorageKeyVaultUri="https://${KEY_VAULT}.vault.azure.net/" \
-        AzureWebJobsSecretStorageKeyVaultClientId="$APPS_CLIENT_ID" \
-        AZURE_CLIENT_ID="$APPS_CLIENT_ID" \
-        KEY_VAULT_URI="https://${KEY_VAULT}.vault.azure.net/" \
-        CENTINELA_STORAGE_ACCOUNT="$STORAGE_ACCOUNT" \
-        CENTINELA_RAW_TRANSACTIONS_CONTAINER_PRODUCTION=raw-transactions-production \
-        CENTINELA_RAW_TRANSACTIONS_CONTAINER_STAGING=raw-transactions-staging \
-        CENTINELA_FLAGGED_CASES_QUEUE_PRODUCTION=flagged-cases-production \
-        CENTINELA_FLAGGED_CASES_QUEUE_STAGING=flagged-cases-staging \
-        COSMOS_DATABASE=centinela \
-        COSMOS_COLLECTION=transactions \
-        SCORING_THRESHOLD="${SCORING_THRESHOLD:-60}" \
-        RISKY_MERCHANTS="${RISKY_MERCHANTS:-Casino Royale,BetCrypto}" \
-        RISKY_CATEGORIES="${RISKY_CATEGORIES:-gambling,crypto,pawn_shop}" \
-        APPLICATIONINSIGHTS_CONNECTION_STRING="$INSIGHTS_CONNECTION" \
-        CENTINELA_ROLE_NAME=centinela-scoring \
+      --env-vars "${env_vars[@]}" \
       --output none
   fi
 
@@ -326,9 +346,12 @@ wire_eventgrid_subscription() {
       log_info "Ejecucion no interactiva y la suscripcion ya existe: nada que hacer."
       return 0
     fi
-    log_warn "Ejecucion no interactiva SIN suscripcion previa: el cableado de Event Grid"
-    log_warn "requiere una corrida interactiva inicial (lectura temporal del vault)."
-    return 0
+    # Antes esto era un warn + return 0: el pipeline quedaba "verde" con el
+    # motor sordo (ningun evento le llegaba). Es un fallo real: que falle.
+    die "Ejecucion no interactiva SIN suscripcion de Event Grid previa: el cableado
+requiere una corrida interactiva inicial de este script (lectura temporal del
+vault para obtener la system key). Ejecuta deploy-containers.sh como usuario
+antes de delegar los despliegues al pipeline."
   fi
   vault_id="$(az keyvault show -n "$KEY_VAULT" -g "$RESOURCE_GROUP" --query id -o tsv)"
 
@@ -387,9 +410,37 @@ deploy_explainer() {
   local app="ca-${NAME_PREFIX}-explainer"
   local image="${registry}/centinela-api:${IMAGE_TAG}"
 
+  # Mismo patron que deploy_api: un solo juego de variables para create y update.
+  local -a env_vars=(
+    AZURE_CLIENT_ID="$APPS_CLIENT_ID"
+    CENTINELA_STORAGE_ACCOUNT="$STORAGE_ACCOUNT"
+    CENTINELA_RAW_TRANSACTIONS_CONTAINER=raw-transactions-production
+    CENTINELA_VERIFICATION_DOCUMENTS_CONTAINER=verification-documents-production
+    CENTINELA_FLAGGED_CASES_QUEUE=flagged-cases-production
+    CENTINELA_EVENTGRID_TOPIC_ENDPOINT="$EVENTGRID_ENDPOINT"
+    CENTINELA_POSTGRES_JDBC_URL="$PG_JDBC_URL"
+    CENTINELA_POSTGRES_USER="${NAME_PREFIX}_apps"
+    CENTINELA_COSMOS_MONGO_CONNECTION_STRING=secretref:cosmos-mongo
+    CENTINELA_ENTRA_ISSUER_URI="https://login.microsoftonline.com/${TENANT_ID}/v2.0"
+    CENTINELA_ENTRA_AUDIENCE="${ENTRA_APP_ID}"
+    CENTINELA_ENTRA_JWK_SET_URI="https://login.microsoftonline.com/${TENANT_ID}/discovery/v2.0/keys"
+    APPLICATIONINSIGHTS_CONNECTION_STRING="$INSIGHTS_CONNECTION"
+    CENTINELA_SCORING_RECORD_ENABLED=true
+    CENTINELA_INQUIRY_ENABLED=false
+    CENTINELA_EXPLAINER_ENABLED=true
+    CENTINELA_DOCUMENT_VERIFICATION_ENABLED=true
+    CENTINELA_QUEUE_AUTO_START=false
+    CENTINELA_ROLE_NAME=centinela-explainer
+  )
+
   if app_exists "$app"; then
     log_info "Actualizando '$app' a $image"
-    az containerapp update -g "$RESOURCE_GROUP" -n "$app" --image "$image" --output none
+    az containerapp secret set -g "$RESOURCE_GROUP" -n "$app" \
+      --secrets "cosmos-mongo=keyvaultref:${COSMOS_SECRET_URI},identityref:${APPS_IDENTITY_ID}" \
+      --output none
+    az containerapp update -g "$RESOURCE_GROUP" -n "$app" --image "$image" \
+      --set-env-vars "${env_vars[@]}" \
+      --output none
   else
     log_info "Creando '$app' (misma imagen que la API, otro papel)"
     # Sin ingreso: no atiende peticiones, consulta trabajo pendiente.
@@ -402,26 +453,7 @@ deploy_explainer() {
       --cpu "$CPU_PER_REPLICA" --memory "$MEMORY_PER_REPLICA" \
       --min-replicas "$EXPLAINER_MIN_REPLICAS" --max-replicas "$EXPLAINER_MAX_REPLICAS" \
       --secrets "cosmos-mongo=keyvaultref:${COSMOS_SECRET_URI},identityref:${APPS_IDENTITY_ID}" \
-      --env-vars \
-        AZURE_CLIENT_ID="$APPS_CLIENT_ID" \
-        CENTINELA_STORAGE_ACCOUNT="$STORAGE_ACCOUNT" \
-        CENTINELA_RAW_TRANSACTIONS_CONTAINER=raw-transactions-production \
-        CENTINELA_VERIFICATION_DOCUMENTS_CONTAINER=verification-documents-production \
-        CENTINELA_FLAGGED_CASES_QUEUE=flagged-cases-production \
-        CENTINELA_EVENTGRID_TOPIC_ENDPOINT="$EVENTGRID_ENDPOINT" \
-        CENTINELA_POSTGRES_JDBC_URL="$PG_JDBC_URL" \
-        CENTINELA_POSTGRES_USER="${NAME_PREFIX}_apps" \
-        CENTINELA_COSMOS_MONGO_CONNECTION_STRING=secretref:cosmos-mongo \
-        CENTINELA_ENTRA_ISSUER_URI="https://login.microsoftonline.com/${TENANT_ID}/v2.0" \
-        CENTINELA_ENTRA_AUDIENCE="${ENTRA_APP_ID}" \
-        CENTINELA_ENTRA_JWK_SET_URI="https://login.microsoftonline.com/${TENANT_ID}/discovery/v2.0/keys" \
-        APPLICATIONINSIGHTS_CONNECTION_STRING="$INSIGHTS_CONNECTION" \
-        CENTINELA_SCORING_RECORD_ENABLED=true \
-        CENTINELA_INQUIRY_ENABLED=false \
-        CENTINELA_EXPLAINER_ENABLED=true \
-        CENTINELA_DOCUMENT_VERIFICATION_ENABLED=true \
-        CENTINELA_QUEUE_AUTO_START=false \
-        CENTINELA_ROLE_NAME=centinela-explainer \
+      --env-vars "${env_vars[@]}" \
       --output none
   fi
 
