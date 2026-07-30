@@ -16,6 +16,10 @@ cliente ──► API (Container App) ──► Blob crudo ──► Event Grid 
 El cliente recibe su acuse **antes** de que exista ningún análisis; todo lo demás ocurre
 detrás, de forma asíncrona y trazada con contexto W3C que viaja **dentro de los mensajes**.
 
+> **Toda la documentación del sistema está consolidada en [`GUIA_TECNICA.md`](GUIA_TECNICA.md)**:
+> arquitectura, componentes, relación con el banco de pruebas, despliegue desde cero,
+> CI/CD, pruebas y operación. Este README es solo el arranque rápido.
+
 ---
 
 ## Requisitos
@@ -62,98 +66,60 @@ se simula. El simulador reproduce exactamente los dos efectos observables del mo
 (registro de scoring + mensaje `flagged-case-v1`), pero **no ejecuta las reglas** — la
 detección se valida con las suites del motor (`scoring-function/`).
 
-### Ensayo del escenario de fallo (obligatorio en la sustentación)
-
-```bash
-docker compose stop explainer    # los casos siguen abriéndose, en estado PENDING
-docker compose start explainer   # el backlog pendiente se explica solo
-```
-
 ---
 
-## Despliegue en Azure
-
-La guía completa y reproducible es
-[`docs/4_Infraestructura_y_Despliegue/5_Runbook_Despliegue_Completo.md`](docs/4_Infraestructura_y_Despliegue/5_Runbook_Despliegue_Completo.md).
-Resumen del orden para la topología final (Container Apps, sin App Service — ver `ADR-009`):
+## Despliegue en Azure (un comando)
 
 ```bash
-cp .env.example .env                                   # completar valores
-bash scripts/provision-network-containerapps.sh        # VNet + subredes + DNS privado
-bash scripts/provision-cosmos.sh                       # almacén de transacciones (PE)
-bash scripts/provision-postgres.sh                     # almacén de casos (PE)
-bash scripts/provision-keyvault.sh                     # secretos
-bash scripts/provision-containerapps-identity.sh       # identidad de datos + roles
-bash scripts/provision-eventgrid.sh --publisher-principal <oid> \
-     --consumer-principal <oid> --function-principal <oid>
-bash scripts/provision-entra-app.sh                    # registro OAuth2 + app roles
-bash scripts/configure-postgres-managed-identity.sh    # principal de BD (ventana temporal)
-bash scripts/provision-container-registry.sh           # ACR + pull sin credenciales
-bash scripts/provision-container-apps.sh               # entorno integrado a la VNet
-bash scripts/provision-observability.sh                # App Insights + alerta
-bash scripts/deploy-containers.sh --tag <sha>          # las tres aplicaciones
-bash scripts/verify/verify-deployment-health.sh        # ¿responde de verdad?
+cp .env.example .env     # completar SUBSCRIPTION_ID, LOCATION, RESOURCE_GROUP, NAME_PREFIX
+az login
+CENTINELA_ALERT_EMAIL="tu@correo" bash scripts/deploy-platform.sh --yes --with-lab
 ```
 
-Todos los scripts son idempotentes y admiten `--validate-only` donde crear tiene costo.
-**No existe ninguna credencial en el repositorio**: Managed Identity para datos, OIDC
-federado para el pipeline, Key Vault para lo inevitablemente secreto.
+Aprovisiona la infraestructura completa (red privada, Storage, Cosmos, PostgreSQL,
+Key Vault, Event Grid, identidades, Entra, ACR, Container Apps), construye las imágenes
+**dentro de Azure** (`az acr build`, sin Docker local), despliega las tres aplicaciones y
+el banco de pruebas, y verifica la salud. Es idempotente: si un paso falla, se corrige la
+causa y se vuelve a ejecutar. El paso a paso comentado, los requisitos y la configuración
+del CI/CD están en [`GUIA_TECNICA.md` §12](GUIA_TECNICA.md#12-despliegue-desde-cero).
 
 ### Control de crédito
 
 ```bash
 bash scripts/shutdown-daily.sh          # apaga lo que factura por tiempo
 bash scripts/shutdown-daily.sh --start  # lo enciende de vuelta
+bash scripts/destroy-week1.sh --wait    # elimina todo el grupo de recursos
 ```
 
 ---
 
 ## CI/CD
 
-GitHub Actions con **OIDC federado — cero credenciales almacenadas** (`ADR-008`):
+GitHub Actions con **OIDC federado — cero credenciales almacenadas**:
 
-- `.github/workflows/ci.yml` — construcción, pruebas de los dos módulos, barrido de
-  secretos (árbol **y** historial de Git), shellcheck. Sin acceso a ninguna credencial:
-  un *fork* malicioso no obtiene nada.
+- `.github/workflows/ci.yml` — construcción y pruebas de los dos módulos, barrido de
+  secretos (árbol **y** historial de Git), shellcheck bloqueante.
 - `.github/workflows/cd.yml` — al integrar a `main`: pruebas → imágenes → verificación de
-  secretos **capa por capa** → publicación en ACR → despliegue → sonda de salud. El
-  encadenamiento con `needs` garantiza que una prueba fallida detiene todo antes de que
-  exista imagen alguna.
+  secretos capa por capa → publicación en ACR → despliegue → sonda de salud. Interruptor:
+  variable de repositorio `AZURE_DEPLOY_ENABLED=true`.
 
-Aprovisionamiento de la identidad del pipeline: `bash scripts/provision-github-oidc.sh`.
+Aprovisionamiento de la identidad del pipeline (una vez, para ambos repositorios):
 
-### Activar el despliegue automático
-
-Las etapas de `cd.yml` que tocan Azure están detrás de un interruptor, para que un
-*merge* a `main` sin OIDC configurado ejecute CI y se detenga limpio en lugar de fallar.
-Para activarlo, una sola vez, tras registrar los *secrets* que imprime
-`provision-github-oidc.sh`:
-
+```bash
+CENTINELA_GITHUB_REPO="Centinela-App/Centinela,Centinela-App/centinela-lab" \
+  bash scripts/provision-github-oidc.sh
 ```
-# Settings → Secrets and variables → Actions → Variables
-AZURE_DEPLOY_ENABLED = true
-```
-
-Desde ese momento, cada integración a `main` despliega sola. Para un primer despliegue
-controlado antes de activarlo, usa el disparo manual (`workflow_dispatch`), que ignora el
-interruptor a propósito.
 
 ---
 
 ## Verificación
 
 ```bash
-bash scripts/verify/verify-practices.sh          # estructura, migraciones, instrumentación, secretos
-bash scripts/tests/capture-week3-evidence.sh     # evidencia reproducible por issue
-bash scripts/verify/verify-trace.sh <txId>       # traza individual con tiempos por etapa
-bash scripts/verify/verify-scaling.sh            # réplicas bajo carga, en vivo
-bash scripts/verify/verify-explainer-correspondence.sh <txId>
+bash scripts/verify/verify-deployment-health.sh   # ¿responde de verdad?
+bash scripts/verify/run-e2e-fraud.sh              # transacción → caso, extremo a extremo
+bash scripts/verify/verify-trace.sh <txId>        # traza individual con tiempos por etapa
+bash scripts/verify/verify-practices.sh           # estructura, migraciones, secretos
 ```
-
-Además, siete agentes de auditoría en `.claude/agents/` (`verify-infra`, `verify-secrets`,
-`verify-containers`, `verify-cicd`, `verify-observability`, `verify-explainer`,
-`verify-practices`) que ejecutan estos mismos scripts y emiten veredicto razonado — el
-veredicto siempre se apoya en salida de comando reproducible sin IA.
 
 ---
 
@@ -171,20 +137,12 @@ src/                    aplicación principal (hexagonal: domain / application /
   └─ shared/                 contratos, traza W3C, telemetría por etapas
 scoring-function/       motor de scoring (Azure Functions en contenedor, módulo independiente)
 scripts/                aprovisionamiento, despliegue, verificación y apagado
-docs/                   requisitos, arquitectura, ADR, issues, evidencias, consultas KQL
+docs/contracts/         contratos ejecutables: OpenAPI y esquemas de mensajería
+GUIA_TECNICA.md         LA guía: arquitectura, despliegue, CI/CD, pruebas y operación
 docker-compose.yml      entorno local completo
 Dockerfile              imagen multietapa de la aplicación (la misma para API y explicador)
 ```
 
 La app de pruebas (un botón por causal de alerta) vive en un **repositorio aparte**:
-[`centinela-lab`](../centinela-lab) — cliente externo puro, sin código compartido.
-
-## Documentación clave
-
-| Documento | Qué contiene |
-|---|---|
-| `docs/2_Arquitectura/2_ADR_Decisiones_Arquitectura.md` | Las 14 decisiones, cerradas, con sus contrapartidas |
-| `docs/5_Issues_y_Trazabilidad/7_Historias_Issues_Semana3.md` | Backlog de la semana 3 con estados reales |
-| `docs/observabilidad/consultas-kql.md` | Las cinco preguntas de operación, ejecutables |
-| `docs/evidence/INDEX-semana3.md` | Cómo se genera y lee la evidencia |
-| `docs/SECURITY-remediacion-env-leak.md` | Historial de incidentes de secretos y su remediación |
+[`centinela-lab`](https://github.com/Centinela-App/centinela-lab) — cliente externo puro,
+sin código compartido.
