@@ -361,7 +361,42 @@ antes de delegar los despliegues al pipeline."
   # La asignacion RBAC tarda en propagar al plano de datos del vault.
   sleep 30
 
-  key_secret=""
+  # El host genera y persiste sus claves DE FORMA PEREZOSA: solo cuando alguien
+  # se las pide. En despliegue real el vault quedaba vacio y este script moria
+  # esperando una clave que nadie habia provocado. Materializacion forzada:
+  #   1. Una peticion al webhook (401 esperado) obliga al host a inicializar su
+  #      repositorio de secretos y persistir la master key en el vault.
+  #   2. La system key del extension de Event Grid no se autogenera en las
+  #      versiones actuales del host (GET /admin/.../eventgrid_extension -> 404):
+  #      se crea explicitamente via la API de administracion, autenticada con la
+  #      master key, con un valor generado aqui y nunca impreso.
+  log_info "Forzando la materializacion de las claves del host..."
+  curl -s -o /dev/null --max-time 15 \
+    "https://${fqdn}/runtime/webhooks/eventgrid?functionName=ScoreTransaction&code=probe" || true
+  sleep 10
+
+  key_secret="$(az keyvault secret list --vault-name "$KEY_VAULT" \
+    --query "[?contains(name, 'eventgrid')].name | [0]" -o tsv 2>/dev/null || true)"
+  if [ -z "$key_secret" ] || [ "$key_secret" = "null" ]; then
+    local master_secret master_key nueva_clave codigo_put
+    master_secret="$(az keyvault secret list --vault-name "$KEY_VAULT" \
+      --query "[?contains(name, 'masterKey')].name | [0]" -o tsv 2>/dev/null || true)"
+    if [ -n "$master_secret" ] && [ "$master_secret" != "null" ]; then
+      master_key="$(az keyvault secret show --vault-name "$KEY_VAULT" \
+        --name "$master_secret" --query value -o tsv)"
+      nueva_clave="$(openssl rand -base64 40 | tr '+/' '-_' | tr -d '=')"
+      codigo_put="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X PUT \
+        -H 'Content-Type: application/json' \
+        -d "{\"name\":\"eventgrid_extension\",\"value\":\"${nueva_clave}\"}" \
+        "https://${fqdn}/admin/host/systemkeys/eventgrid_extension?code=${master_key}")"
+      unset master_key nueva_clave
+      case "$codigo_put" in
+        200|201) log_info "  system key del extension de Event Grid creada." ;;
+        *) log_warn "  no se pudo crear la system key (HTTP $codigo_put); se sigue esperando por si el host la publica." ;;
+      esac
+    fi
+  fi
+
   for intento in $(seq 1 12); do
     key_secret="$(az keyvault secret list --vault-name "$KEY_VAULT" \
       --query "[?contains(name, 'eventgrid')].name | [0]" -o tsv 2>/dev/null || true)"
