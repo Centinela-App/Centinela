@@ -159,6 +159,37 @@ ensure_federated_credentials() {
   federated "$app_id" "gh-${slug}-pull-request" \
     "repo:${repo}:pull_request" \
     "Validaciones de pull request de ${repo} (solo lectura en la practica)"
+
+  # GitHub esta migrando el claim 'sub' al formato INMUTABLE con identificadores
+  # numericos: 'repo:Org@<orgId>/repo@<repoId>:...'. Un pipeline cuyo token ya
+  # llega con ese formato falla contra las credenciales clasicas con
+  # AADSTS700213 (observado en despliegue real). Los identificadores son
+  # publicos y se resuelven de la API de GitHub sin token; si la consulta
+  # falla (repositorio privado sin acceso anonimo), se avisa con el comando
+  # exacto para crear las credenciales a mano.
+  local owner name owner_id repo_id
+  owner="${repo%%/*}"; name="${repo##*/}"
+  owner_id="$(curl -s --max-time 15 "https://api.github.com/users/${owner}" \
+    | grep -oE '"id": *[0-9]+' | head -1 | grep -oE '[0-9]+' || true)"
+  repo_id="$(curl -s --max-time 15 "https://api.github.com/repos/${repo}" \
+    | grep -oE '"id": *[0-9]+' | head -1 | grep -oE '[0-9]+' || true)"
+
+  if [ -n "$owner_id" ] && [ -n "$repo_id" ]; then
+    local repo_con_ids="${owner}@${owner_id}/${name}@${repo_id}"
+    federated "$app_id" "gh-${slug}-id-branch-${GITHUB_BRANCH}" \
+      "repo:${repo_con_ids}:ref:refs/heads/${GITHUB_BRANCH}" \
+      "Integraciones a ${GITHUB_BRANCH} de ${repo} (subject inmutable con IDs)"
+    federated "$app_id" "gh-${slug}-id-environment-produccion" \
+      "repo:${repo_con_ids}:environment:produccion" \
+      "Despliegues a produccion de ${repo} (subject inmutable con IDs)"
+    federated "$app_id" "gh-${slug}-id-pull-request" \
+      "repo:${repo_con_ids}:pull_request" \
+      "Validaciones de PR de ${repo} (subject inmutable con IDs)"
+  else
+    log_warn "  No se pudieron resolver los IDs de ${repo} desde la API de GitHub."
+    log_warn "  Si el pipeline falla con AADSTS700213, crea la credencial con el"
+    log_warn "  subject EXACTO que aparece en el error (formato Org@id/repo@id)."
+  fi
 }
 
 federated() {
