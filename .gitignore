@@ -6,9 +6,14 @@
 *.pem
 *.key
 *secret*
-# Excepcion: el auditor de secretos (ISS-S2-003) lleva "secret" en el nombre pero
-# NO contiene secretos; es un script de prueba versionado.
+# Excepcion: los auditores de secretos llevan "secret" en el nombre pero NO
+# contienen secretos; son herramientas versionadas. Sin la segunda excepcion,
+# verify-image-secrets.sh quedaba silenciosamente SIN versionar y el paso del
+# CD que lo invoca moria con exit 127 en todo checkout limpio (observado en
+# pipeline real).
 !scripts/tests/audit-git-secrets.sh
+!scripts/verify/verify-image-secrets.sh
+!.claude/agents/verify-secrets.md
 
 # === Build / Maven ===
 target/
