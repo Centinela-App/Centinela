@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Centinela · Guía técnica completa</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root{
+    --bg:#0f1419;--surface:#1a2028;--surface2:#232b36;--border:#2f3946;
+    --text:#e6edf3;--muted:#8b98a5;--accent:#4a9eff;--ok:#3fb950;
+    --warn:#f0883e;--danger:#f85149;--code-bg:#0d1117;
+    --mono:ui-monospace,"Cascadia Code",Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.6}
+  #layout{display:flex;min-height:100vh}
+  /* Sidebar */
+  aside{width:270px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);position:sticky;top:0;height:100vh;overflow-y:auto;padding:1.2rem 0}
+  aside .brand{padding:0 1.3rem 1rem;border-bottom:1px solid var(--border);margin-bottom:.6rem}
+  aside .brand h1{font-size:1.05rem;margin:0}
+  aside .brand p{font-size:.75rem;color:var(--muted);margin:.2rem 0 0}
+  aside nav a{display:block;padding:.55rem 1.3rem;color:var(--muted);text-decoration:none;font-size:.88rem;border-left:3px solid transparent}
+  aside nav a:hover{background:var(--surface2);color:var(--text)}
+  aside nav a.active{color:var(--accent);border-left-color:var(--accent);background:rgba(74,158,255,.08)}
+  aside nav .grp{padding:.9rem 1.3rem .3rem;font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:#5a6673}
+  /* Content */
+  main{flex:1;min-width:0;padding:2.2rem 3rem;max-width:960px}
+  section{scroll-margin-top:1rem;margin-bottom:3.5rem}
+  h2{font-size:1.6rem;margin:0 0 .4rem;padding-bottom:.5rem;border-bottom:2px solid var(--border)}
+  h3{font-size:1.15rem;color:var(--accent);margin:1.9rem 0 .6rem}
+  h4{font-size:.98rem;margin:1.1rem 0 .4rem}
+  p{margin:.6rem 0}
+  ul,ol{margin:.5rem 0 .9rem;padding-left:1.3rem}
+  li{margin:.3rem 0}
+  strong{color:#fff}
+  em{color:var(--muted)}
+  code{background:var(--surface2);padding:.1rem .4rem;border-radius:4px;font-family:var(--mono);font-size:.85em}
+  pre{background:var(--code-bg);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:8px;padding:1rem;overflow-x:auto;font-family:var(--mono);font-size:.8rem;line-height:1.5}
+  pre code{background:none;padding:0}
+  details{background:var(--surface);border:1px solid var(--border);border-radius:8px;margin:.7rem 0;overflow:hidden}
+  details[open]{border-color:var(--accent)}
+  summary{cursor:pointer;padding:.8rem 1.1rem;font-weight:600;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:1rem}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"▸";color:var(--accent);transition:transform .2s}
+  details[open] summary::after{transform:rotate(90deg)}
+  details .body{padding:.2rem 1.1rem 1rem;border-top:1px solid var(--border)}
+  .lead{font-size:1.05rem;color:var(--muted)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:1rem 0}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:.9rem;margin:1rem 0}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1rem}
+  .card h4{margin:0 0 .35rem;font-size:.92rem}
+  .card p{margin:0;font-size:.86rem;color:var(--muted)}
+  .tag{display:inline-block;font-size:.68rem;padding:.12rem .5rem;border-radius:999px;font-weight:700;margin-bottom:.4rem}
+  .t-why{background:rgba(74,158,255,.15);color:var(--accent)}
+  .t-lose{background:rgba(248,81,73,.15);color:var(--danger)}
+  .t-ok{background:rgba(63,185,80,.15);color:var(--ok)}
+  .t-code{background:rgba(139,152,165,.15);color:var(--muted)}
+  .src{display:block;font-family:var(--mono);font-size:.72rem;color:#5a6673;margin:.3rem 0 -.3rem}
+  .src b{color:var(--accent);font-weight:600}
+  pre.code-adr{margin-top:.35rem}
+  table{width:100%;border-collapse:collapse;margin:1rem 0;font-size:.85rem}
+  th,td{text-align:left;padding:.5rem .7rem;border-bottom:1px solid var(--border);vertical-align:top}
+  th{color:var(--muted);font-weight:600}
+  .mermaid{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1.2rem;margin:1.2rem 0;text-align:center;overflow-x:auto}
+  .step{border-left:2px solid var(--border);padding-left:1.2rem;margin:1.4rem 0;position:relative}
+  .step::before{content:attr(data-n);position:absolute;left:-15px;top:0;width:28px;height:28px;background:var(--accent);color:#04121f;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.82rem}
+  .step .concept{background:rgba(74,158,255,.07);border-radius:6px;padding:.65rem 1rem;margin:.5rem 0;font-size:.92rem}
+  .note{background:rgba(240,136,62,.08);border-left:3px solid var(--warn);border-radius:6px;padding:.7rem 1rem;font-size:.88rem;margin:.9rem 0}
+  .ok-box{background:rgba(63,185,80,.07);border-left:3px solid var(--ok);border-radius:6px;padding:.7rem 1rem;font-size:.88rem;margin:.9rem 0}
+  .pill{font-size:.72rem;padding:.1rem .5rem;border-radius:4px;background:var(--surface2);color:var(--muted);font-family:var(--mono)}
+  .footer{color:var(--muted);font-size:.78rem;text-align:center;padding:2.5rem 0 1rem;border-top:1px solid var(--border);margin-top:2rem}
+  .toc-toggle{display:none}
+  @media(max-width:860px){
+    #layout{flex-direction:column}
+    aside{width:100%;height:auto;position:static;border-right:none;border-bottom:1px solid var(--border)}
+    main{padding:1.4rem}
+    .grid,.grid3{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div id="layout">
+
+<aside>
+  <div class="brand">
+    <h1>🛡️ Centinela</h1>
+    <p>Guía técnica completa del proyecto</p>
+  </div>
+  <nav id="toc">
+    <div class="grp">Entender</div>
+    <a href="#vision">1 · Visión general</a>
+    <a href="#evolucion">2 · Las tres semanas</a>
+    <a href="#arquitectura">3 · Arquitectura hexagonal</a>
+    <a href="#componentes">4 · Componentes en detalle</a>
+    <a href="#datos">5 · Datos y contratos</a>
+    <div class="grp">Nube</div>
+    <a href="#azure">6 · Infraestructura Azure</a>
+    <a href="#seguridad">7 · Seguridad e identidad</a>
+    <div class="grp">Decisiones</div>
+    <a href="#adrs">8 · Las 14 decisiones (ADR)</a>
+    <div class="grp">Operar</div>
+    <a href="#despliegue">9 · Despliegue paso a paso</a>
+    <a href="#cicd">10 · Pipeline CI/CD</a>
+    <a href="#ciclo">11 · Ciclo de una petición</a>
+    <a href="#observabilidad">12 · Observabilidad</a>
+    <div class="grp">Repositorios</div>
+    <a href="#archivos">13 · Mapa de archivos</a>
+    <div class="grp">Cierre</div>
+    <a href="#referencia">14 · Referencia rápida</a>
+  </nav>
+</aside>
+
+<main>
+
+<!-- ========================= 1 ========================= -->
+<section id="vision">
+  <h2>1 · Visión general</h2>
+  <p class="lead">Centinela decide, para cada transacción financiera, si abrir un caso de fraude —sin que el cliente espere por ello— y explica esa decisión en lenguaje legible.</p>
+
+  <h3>El problema que resuelve</h3>
+  <p>Un originador (banco, pasarela de pago) enfrenta dos necesidades en tensión:</p>
+  <div class="grid">
+    <div class="card"><h4>Respuesta inmediata</h4><p>No puede dejar al cliente esperando mientras se analiza el fraude. El acuse debe llegar en milisegundos.</p></div>
+    <div class="card"><h4>Análisis con contexto</h4><p>Juzgar una transacción exige compararla con el historial de la cuenta — y eso toma tiempo.</p></div>
+  </div>
+  <p>Centinela resuelve la tensión <strong>desacoplando la ingesta del análisis</strong>: la API responde <span class="pill">202 Accepted</span> al instante, y la detección ocurre después, de forma asíncrona y trazada de extremo a extremo.</p>
+
+  <h3>Las cinco propiedades que definen el sistema</h3>
+  <div class="grid">
+    <div class="card"><h4>🎯 Detección con contexto</h4><p>Cuatro reglas evaluadas contra el historial reciente de la cuenta, no en aislamiento.</p></div>
+    <div class="card"><h4>📝 Explicabilidad determinista</h4><p>Plantilla, sin modelo de lenguaje. La misma decisión produce el mismo texto y solo afirma lo que el motor registró.</p></div>
+    <div class="card"><h4>🔑 Cero credenciales</h4><p>Managed Identity, OIDC federado y Key Vault. Ninguna contraseña en código, repositorio ni imágenes.</p></div>
+    <div class="card"><h4>🔍 Trazabilidad individual</h4><p>Dado un <code>transactionId</code>, se reconstruye su recorrido con tiempos por etapa.</p></div>
+  </div>
+  <div class="ok-box"><strong>Estado del proyecto:</strong> tres semanas completadas · 24/25 issues verificadas · pipeline en <code>main</code> · desplegado y probado de extremo a extremo en Azure.</div>
+</section>
+
+<!-- ========================= 2 ========================= -->
+<section id="evolucion">
+  <h2>2 · Las tres semanas</h2>
+  <p class="lead">El proyecto se construyó por incrementos. Entender qué aportó cada semana explica por qué el sistema tiene la forma que tiene.</p>
+
+  <table>
+    <tr><th>Semana</th><th>Tema</th><th>Qué se entregó</th></tr>
+    <tr><td><strong>1</strong></td><td>Infraestructura y contrato</td><td>Red privada (VNet + Private Endpoints), Storage, App Service, Entra ID con app roles, ingesta cruda en Blob, carga de documentos.</td></tr>
+    <tr><td><strong>2</strong></td><td>Motor de eventos</td><td>Cosmos, PostgreSQL, Key Vault, Event Grid + Storage Queue, motor de scoring (4 reglas), esquema de casos con auditoría inmutable, consumidor idempotente.</td></tr>
+    <tr><td><strong>3</strong></td><td>Operabilidad</td><td>Contenedores + Container Apps, CI/CD con OIDC, explicador de casos, verificación documental, trazabilidad W3C, observabilidad, banco de pruebas.</td></tr>
+  </table>
+
+  <div class="note"><strong>Un giro clave de la Semana 3:</strong> el cómputo migró de <strong>App Service</strong> a <strong>Azure Container Apps</strong> (ADR-009). La decisión, ya prevista, se volvió forzosa cuando la suscripción resultó no tener cuota de App Service en la región. El resultado: todo corre contenedorizado, incluido el motor de scoring.</div>
+</section>
+
+<!-- ========================= 3 ========================= -->
+<section id="arquitectura">
+  <h2>3 · Arquitectura hexagonal</h2>
+  <p class="lead">El sistema sigue <strong>puertos y adaptadores</strong>: el negocio en el centro, aislado del mundo exterior por interfaces. Cada módulo respeta tres capas.</p>
+
+  <div class="mermaid">
+flowchart TB
+  subgraph INFRA["infrastructure — adaptadores (Spring, Azure SDK, HTTP)"]
+    WEB[Controladores REST]
+    BLOB[Adaptador Blob]
+    EG[Adaptador Event Grid]
+    JPA[Adaptador JPA / PostgreSQL]
+    MONGO[Adaptador Cosmos/Mongo]
+  end
+  subgraph APP["application — casos de uso (orquestación)"]
+    UC1[IngestTransactionService]
+    UC2[OpenCaseService]
+    UC3[GenerateCaseExplanationService]
+  end
+  subgraph DOM["domain — reglas puras (Java, sin frameworks)"]
+    R1[Reglas de scoring]
+    M1[Modelos: Transaction, Case, Score]
+    P[Puertos in/out]
+  end
+  WEB --> UC1
+  UC1 --> P
+  UC2 --> P
+  UC3 --> P
+  P -.implementan.-> BLOB & EG & JPA & MONGO
+  UC1 & UC2 & UC3 --> M1
+  DOM --> R1
+  </div>
+
+  <h3>La regla de oro, verificada por una prueba</h3>
+  <p>El dominio <strong>no conoce</strong> Spring, ni Azure, ni HTTP. No es una convención verbal: es un test de <code>ArchUnit</code> que rompe la construcción si alguien lo viola.</p>
+  <pre><code>noClasses().that().resideInAPackage("..domain..")
+  .should().dependOnClassesThat().resideInAnyPackage("..infrastructure..");</code></pre>
+
+  <h3>Los diez módulos del sistema</h3>
+  <table>
+    <tr><th>Módulo</th><th>Responsabilidad</th></tr>
+    <tr><td><code>transactioningestion</code></td><td>Recibe la transacción, la persiste en crudo y publica el evento.</td></tr>
+    <tr><td><code>casemanagement</code></td><td>Abre casos, auditoría inmutable, consumidor de la cola.</td></tr>
+    <tr><td><code>caseexplanation</code></td><td>Explicador determinista por plantilla.</td></tr>
+    <tr><td><code>caseinquiry</code></td><td>API de consulta: análisis de transacción y caso.</td></tr>
+    <tr><td><code>documentstorage</code></td><td>Carga técnica de documentos de verificación.</td></tr>
+    <tr><td><code>documentverification</code></td><td>Extracción de datos del documento, con manejo de fallos.</td></tr>
+    <tr><td><code>scoringrecord</code></td><td>Lectura del registro que el motor dejó en Cosmos.</td></tr>
+    <tr><td><code>identityaccess</code></td><td>Seguridad HTTP: validación JWT, app roles.</td></tr>
+    <tr><td><code>shared</code></td><td>Contratos, contexto de traza W3C, telemetría por etapas.</td></tr>
+    <tr><td><code>scoring-function</code> <em>(módulo aparte)</em></td><td>Motor de scoring: Azure Function en contenedor.</td></tr>
+  </table>
+</section>
+
+<!-- ========================= 4 ========================= -->
+<section id="componentes">
+  <h2>4 · Componentes en detalle</h2>
+  <p class="lead">Cómo funciona cada pieza y por qué existe. Despliega cada una para el detalle.</p>
+
+  <details open><summary>API de ingesta</summary><div class="body">
+    <p>Punto de entrada. Recibe <code>POST /api/v1/transactions</code>, valida el contrato, persiste el JSON crudo en Blob y publica <code>transaction-event-v1</code> en Event Grid. Responde <span class="pill">202</span> <strong>antes</strong> de que exista veredicto.</p>
+    <ul>
+      <li><strong>Rate limiting</strong> por origen (token bucket) — evita que una avalancha dispare el motor por cada petición.</li>
+      <li><strong>Idempotencia</strong> por <code>transactionId</code> aguas abajo.</li>
+    </ul>
+  </div></details>
+
+  <details><summary>Motor de scoring (4 reglas)</summary><div class="body">
+    <p>Azure Function disparada por Event Grid. Lee el historial de la cuenta desde Cosmos (una sola partición) y evalúa cuatro reglas. Suma puntos; si superan el umbral (configurable en caliente), encola un caso.</p>
+    <table>
+      <tr><th>Regla</th><th>Puntos</th><th>Se activa cuando…</th></tr>
+      <tr><td>Geografía imposible</td><td><strong>40</strong></td><td>La distancia y el tiempo entre dos transacciones implican una velocidad imposible.</td></tr>
+      <tr><td>Comercio de riesgo</td><td><strong>35</strong></td><td>El comercio o su categoría figuran en la lista de riesgo.</td></tr>
+      <tr><td>Velocidad / frecuencia</td><td><strong>30</strong></td><td>Demasiadas transacciones en una ventana corta frente a la cadencia habitual.</td></tr>
+      <tr><td>Monto atípico</td><td><strong>25</strong></td><td>El monto supera muchas veces el promedio histórico de la cuenta.</td></tr>
+    </table>
+    <div class="note">Cada regla registra <strong>los valores que la activaron</strong> (ciudades, multiplicador observado, cadencia). Sin eso, el explicador no podría redactar la decisión — el enunciado asigna esa responsabilidad al motor, no al explicador.</div>
+  </div></details>
+
+  <details><summary>Consumidor de casos + auditoría inmutable</summary><div class="body">
+    <p>Lee <code>flagged-case-v1</code> de la Storage Queue y abre el caso en PostgreSQL. <strong>Idempotente</strong> por <code>transactionId</code>: reprocesar un mensaje no duplica el caso. La bitácora de auditoría es <em>append-only</em> — un trigger rechaza UPDATE y DELETE.</p>
+  </div></details>
+
+  <details><summary>Explicador (asíncrono, resiliente)</summary><div class="body">
+    <p>Componente independiente que consulta casos con <code>explanation_state = 'PENDING'</code> y les redacta una explicación determinista.</p>
+    <ul>
+      <li><strong>No usa modelos de lenguaje.</strong> Es una plantilla; la misma decisión produce el mismo texto siempre.</li>
+      <li><strong>Correspondencia estricta:</strong> cada frase sale de un valor que el motor registró. Si falta un dato, la frase se empobrece en vez de inventarlo.</li>
+      <li><strong>Resiliente:</strong> si se detiene, los casos siguen abriéndose en <code>PENDING</code>; al restablecerlo, recupera el backlog. Detenerlo no bloquea la detección.</li>
+    </ul>
+  </div></details>
+
+  <details><summary>Verificación documental (con manejo de fallos)</summary><div class="body">
+    <p>Extrae nombre, número de identificación y fechas de un documento cargado. El extractor <strong>nunca lanza</strong>: un documento ilegible, corrupto o de formato inesperado es un <em>desenlace</em> con estado, no una excepción. El caso queda consultable y el analista recibe el resultado.</p>
+    <p><em>Límite declarado:</em> el extractor local (PDFBox) no hace OCR; un escaneo sin texto se reporta como ilegible en vez de devolver campos vacíos.</p>
+  </div></details>
+
+  <details><summary>API de consulta</summary><div class="body">
+    <p>Dos recursos de solo lectura: <code>GET /transactions/{id}/analysis</code> (score, umbral, reglas activadas — existe para <em>toda</em> transacción puntuada) y <code>GET /cases/{transactionId}</code> (el caso, si se marcó). Un <span class="pill">404</span> en <code>/cases</code> significa "no fue marcada", que es la respuesta correcta para una transacción normal.</p>
+  </div></details>
+</section>
+
+<!-- ========================= 5 ========================= -->
+<section id="datos">
+  <h2>5 · Datos y contratos</h2>
+  <p class="lead">Cada tipo de dato vive donde mejor le sirve, y los mensajes entre componentes son contratos versionados.</p>
+
+  <h3>Dónde vive cada dato</h3>
+  <table>
+    <tr><th>Almacén</th><th>Qué guarda</th><th>Por qué ahí</th></tr>
+    <tr><td>Blob Storage</td><td>Transacción cruda (JSON) y documentos</td><td>Objetos inmutables, baratos, referenciados por ruta.</td></tr>
+    <tr><td>Cosmos DB (Mongo)</td><td>Historial + score + valores observados</td><td>Partición por <code>accountId</code>: el historial de una cuenta en una sola partición. TTL 90 días.</td></tr>
+    <tr><td>PostgreSQL</td><td>Casos, asignaciones, resolución, auditoría</td><td>Relacional, con integridad y auditoría inmutable.</td></tr>
+  </table>
+
+  <h3>Migraciones (Flyway)</h3>
+  <ul>
+    <li><code>V1</code> — esquema inicial de casos.</li>
+    <li><code>V2</code> — auditoría inmutable (append-only).</li>
+    <li><code>V3</code> — alineación del modelo y trigger anti-mutación.</li>
+    <li><code>V4</code> — explicación con su ciclo de vida, datos del documento y <code>account_id</code>.</li>
+  </ul>
+
+  <h3>Los dos contratos que cruzan el pipeline</h3>
+  <div class="grid">
+    <div class="card"><h4><code>transaction-event-v1</code></h4><p>API → Event Grid → motor. Notifica la ocurrencia; <strong>no</strong> lleva score. Incluye <code>traceparent</code>.</p></div>
+    <div class="card"><h4><code>flagged-case-v1</code></h4><p>Motor → cola → consumidor. Resumen de reglas y puntos; el detalle vive en Cosmos. También lleva <code>traceparent</code>.</p></div>
+  </div>
+  <div class="note"><strong>El contrato es un dato, no código.</strong> Se define en JSON Schema, versionado, y una prueba de contrato rompe el build si el <code>record</code> de Java y el esquema divergen. Es el único punto de verdad compartido entre dos imágenes que no comparten classpath.</div>
+</section>
+
+<!-- ========================= 6 ========================= -->
+<section id="azure">
+  <h2>6 · Infraestructura Azure</h2>
+  <p class="lead">Topología final (Semana 3): todo en contenedores, con los datos tras endpoints privados y ninguna puerta abierta a internet salvo la API.</p>
+
+  <div class="mermaid">
+flowchart TB
+  subgraph RG["Resource Group: rg-centinela-week1"]
+    subgraph VNET["VNet 10.10.0.0/16"]
+      subgraph ACA["snet-container-apps /23"]
+        API2[Container App: API]
+        SC2[Container App: Motor]
+        EXP2[Container App: Explicador]
+      end
+      subgraph PE["snet-private-endpoints /24"]
+        PEB[(PE Blob)]
+        PEC[(PE Cosmos)]
+        PEP[(PE PostgreSQL)]
+        PEK[(PE Key Vault)]
+      end
+    end
+    ACR[(ACR Basic<br/>registro privado)]
+    LOG[(Log Analytics)]
+    AI[(Application Insights)]
+    EGT{{Event Grid Topic}}
+  end
+  API2 & SC2 & EXP2 -.pull imagen.-> ACR
+  API2 & SC2 & EXP2 -.telemetría.-> AI
+  AI --- LOG
+  API2 --> PEB & PEC & PEP & PEK
+  SC2 --> PEC & PEK
+  EXP2 --> PEC & PEP & PEK
+  API2 --> EGT
+  EGT -.webhook.-> SC2
+  </div>
+
+  <h3>Inventario de recursos</h3>
+  <table>
+    <tr><th>Recurso</th><th>Nombre</th><th>Papel</th></tr>
+    <tr><td>Container Apps Environment</td><td><code>cae-cent</code></td><td>Plataforma de ejecución, integrada a la VNet</td></tr>
+    <tr><td>Container Registry</td><td><code>centacr</code> (Basic)</td><td>Imágenes privadas, pull por Managed Identity</td></tr>
+    <tr><td>Cosmos DB for MongoDB</td><td><code>cent-cosmos-…</code></td><td>Historial y score (Free Tier)</td></tr>
+    <tr><td>PostgreSQL Flexible Server</td><td><code>cent-pg-…</code></td><td>Casos (privado, sin acceso público)</td></tr>
+    <tr><td>Key Vault</td><td><code>cent-kv-…</code></td><td>Cadenas de conexión</td></tr>
+    <tr><td>Event Grid Topic</td><td><code>cent-egt-…</code></td><td>Notificación de transacciones</td></tr>
+    <tr><td>Storage Account</td><td><code>centst…</code></td><td>Blob crudo, documentos, cola de casos</td></tr>
+    <tr><td>Log Analytics + App Insights</td><td><code>log-cent</code> / <code>appi-cent</code></td><td>Telemetría y consultas de operación</td></tr>
+    <tr><td>Managed Identities</td><td><code>id-cent-apps</code>, <code>id-cent-acrpull</code></td><td>Acceso a datos y pull de imágenes sin secretos</td></tr>
+  </table>
+
+  <div class="note"><strong>Requisito no negociable:</strong> Cosmos, PostgreSQL, Blob y Key Vault tienen el acceso público <em>deshabilitado</em>. Solo se alcanzan por Private Endpoint desde la VNet. La subred de contenedores es <code>/23</code> — el mínimo que exige el perfil Consumption de Container Apps.</div>
+</section>
+
+<!-- ========================= 7 ========================= -->
+<section id="seguridad">
+  <h2>7 · Seguridad e identidad</h2>
+  <p class="lead">El principio: <strong>que no haya ningún secreto que robar</strong>. Cada credencial se sustituye por una identidad.</p>
+
+  <div class="mermaid">
+sequenceDiagram
+  participant C as Cliente
+  participant E as Entra ID
+  participant API as API
+  participant MI as Managed Identity
+  participant KV as Key Vault
+  participant DB as Cosmos / PostgreSQL
+  C->>E: Solicita token (app role SERVICE)
+  E-->>C: JWT v2 firmado
+  C->>API: POST + Bearer JWT
+  API->>API: Valida firma, issuer, audience
+  Note over API: 401 si el token no es válido
+  API->>MI: Token para Storage / DB
+  MI-->>API: Token de vida corta
+  API->>KV: Lee cadena de conexión (con su identidad)
+  KV-->>API: Secreto
+  API->>DB: Opera con el token — sin clave en código
+  API-->>C: 202 Accepted
+  </div>
+
+  <h3>Los cuatro pilares</h3>
+  <div class="grid">
+    <div class="card"><h4>Datos → Managed Identity</h4><p>La app pide un token efímero a Azure con su identidad. Nunca guarda una clave.</p></div>
+    <div class="card"><h4>Pipeline → OIDC federado</h4><p>GitHub emite un token de vida corta atado a este repo y rama. No hay JSON de service principal que rotar.</p></div>
+    <div class="card"><h4>Secretos → Key Vault</h4><p>Las pocas cadenas inevitables se resuelven en arranque por Managed Identity.</p></div>
+    <div class="card"><h4>Red → Private Endpoints</h4><p>Los datos no son alcanzables desde internet.</p></div>
+  </div>
+
+  <h3>App roles (Entra ID) y RBAC del equipo</h3>
+  <p>La aplicación define cuatro roles: <code>SERVICE</code> (originador), <code>ANALYST</code>, <code>ADMINISTRATOR</code>, <code>AUDITOR</code>. Sobre la suscripción, el equipo usa RBAC a nivel de <strong>grupo de recursos</strong>: un <em>Owner</em> y varios <em>Contributor</em> — nunca sobre la suscripción, para acotar el alcance de cualquier error.</p>
+  <div class="ok-box">Un secreto filtrado vale hasta que alguien lo rota; un token OIDC filtrado <strong>ya caducó</strong>. Esa es la diferencia entre "el secreto está bien guardado" y "no hay secreto".</div>
+</section>
+
+<!-- ========================= 8 ========================= -->
+<section id="adrs">
+  <h2>8 · Las 14 decisiones de arquitectura (ADR)</h2>
+  <p class="lead">Un ADR registra qué se decidió, <em>por qué</em>, y <em>qué se sacrificó</em>. Aquí las catorce — y, en cada una, <strong>el fragmento de código real que la materializa</strong>: la decisión no es una nota de diseño, está escrita en un archivo que puedes abrir.</p>
+
+  <details open><summary>ADR-001 · Clasificación por modelo de nube (cómputo PaaS, red IaaS)</summary><div class="body">
+    <p><span class="tag t-why">Por qué</span> El cómputo como PaaS elimina administrar VMs y da escala horizontal de fábrica: menor costo operativo y menor superficie de ataque. El <strong>único IaaS es la red</strong> (VNet) — la única porción que la célula opera directamente, necesaria para aislar los datos.</p>
+    <p><span class="tag t-code">En el código</span> Ningún script crea una VM ni un clúster: el cómputo se aprovisiona con <code>az containerapp</code>. La ausencia es la prueba.</p>
+    <span class="src"><b>scripts/provision-container-apps.sh</b> · scripts/deploy-containers.sh</span>
+    <pre class="code-adr"><code># El unico IaaS es la red (VNet + Private Endpoints). El computo es PaaS gestionado:
+az containerapp env create ...     # NO existe 'az vm create' ni 'az aks create' en el repo</code></pre>
+  </div></details>
+
+  <details><summary>ADR-002 · Red privada: datos no alcanzables desde internet</summary><div class="body">
+    <p><span class="tag t-why">Por qué</span> Requisito no negociable. Un firewall por IP es frágil; los Private Endpoints dan una IP privada real dentro de la VNet. Revertir esto con el pipeline ya encima sería la decisión más cara del proyecto — por eso se cierra pronto.</p>
+    <p><span class="tag t-code">En el código</span> El acceso público se deshabilita <em>y</em> el despliegue se aborta si algo lo reabrió — no basta con crearlo cerrado, se verifica cerrado.</p>
+    <span class="src"><b>scripts/configure-function-host-storage.sh:124</b> · configure-private-endpoints.sh:210</span>
+    <pre class="code-adr"><code>public_access="$(az storage account show ... --query publicNetworkAccess -o tsv)"
+[ "$public_access" = "Disabled" ] \
+  || die "Storage publicNetworkAccess='$public_access'; se esperaba Disabled."</code></pre>
+  </div></details>
+
+  <details><summary>ADR-003 · Mínimo privilegio del rol Servicio</summary><div class="body">
+    <p><span class="tag t-why">Por qué</span> El rol Servicio corre desatendido: es el objetivo natural de un atacante. Cada permiso de más es superficie de ataque, así que se justifica uno a uno y se acota al recurso, nunca al grupo ni a la suscripción.</p>
+    <p><span class="tag t-code">En el código</span> A la identidad que baja imágenes se le asigna <strong>un solo rol</strong> (<code>AcrPull</code>), y el usuario administrador del registro se deja apagado para que no exista una llave maestra alternativa.</p>
+    <span class="src"><b>scripts/provision-container-registry.sh:49,133,164</b></span>
+    <pre class="code-adr"><code>readonly ACR_PULL_ROLE="AcrPull"                 # el minimo para bajar una imagen
+az acr create ... --admin-enabled false          # sin usuario admin (llave maestra)
+assign_role "$ACR_PULL_ROLE" "$principal_id" "$scope"   # ese rol, y solo ese</code></pre>
+  </div></details>
+
+  <details><summary>ADR-004 · Alta disponibilidad vs. costo</summary><div class="body">
+    <p><span class="tag t-why">Por qué</span> La decisión original (App Service, Semana 1) era correr una instancia y escalar a dos solo durante la demo, para no gastar el crédito compartido. Al migrar a Container Apps (ADR-009) la redundancia la da el escalado por carga: mínimo 1, hasta 10 réplicas.</p>
+    <p><span class="tag t-code">En el código</span> Los mínimos y máximos son variables — subir el piso a 2 para HA permanente es cambiar un valor, no rehacer nada.</p>
+    <span class="src"><b>scripts/deploy-containers.sh:33-34</b></span>
+    <pre class="code-adr"><code>readonly API_MIN_REPLICAS="${CENTINELA_API_MIN_REPLICAS:-1}"   # normal: 1 (costo)
+readonly API_MAX_REPLICAS="${CENTINELA_API_MAX_REPLICAS:-10}"  # bajo carga: hasta 10</code></pre>
+  </div></details>
+
+  <details><summary>ADR-005 · Sin secretos: Managed Identity desde el día uno</summary><div class="body">
+    <p><span class="tag t-why">Por qué</span> El enunciado prohíbe cualquier credencial en código o repositorio. Con Managed Identity la app pide un token efímero a Azure con su propia identidad; no hay cadena de conexión que fugar ni rotar. Solo se creó Key Vault cuando Cosmos impuso un secreto <em>real</em> e inevitable — nunca "por si acaso".</p>
+    <p><span class="tag t-code">En el código</span> El adaptador usa <code>DefaultAzureCredential</code> (sin claves); en despliegue, una variable elige <em>qué</em> identidad toma, no <em>qué</em> secreto.</p>
+    <span class="src"><b>scripts/deploy-containers.sh:111</b> · pom.xml:111 (azure-identity)</span>
+    <pre class="code-adr"><code># AZURE_CLIENT_ID selecciona QUE identidad usa DefaultAzureCredential —
+# no hay ningun secreto ni connection string que pasar a la aplicacion.</code></pre>
+  </div></details>
+
+  <details><summary>ADR-006 · Stack Java 21 + estructura hexagonal</summary><div class="body">
+    <p><span class="tag t-why">Por qué</span> Los adaptadores de Azure quedan aislados detrás de puertos, de modo que el pipeline y el cambio a contenedores no tocan el dominio. La regla no es verbal: una prueba rompe la construcción si alguien la viola.</p>
+    <p><span class="tag t-code">En el código</span> Cinco reglas <code>ArchUnit</code>; esta prohíbe que el dominio o la aplicación toquen el SDK de Azure.</p>
+    <span class="src"><b>src/test/java/com/centinela/architecture/ArchitectureConventionsTest.java:52</b></span>
+    <pre class="code-adr"><code>noClasses()
+    .that().resideInAnyPackage("..domain..", "..application..")
+    .should().dependOnClassesThat().resideInAnyPackage("com.azure..");</code></pre>
+  </div></details>
+
+  <details><summary>ADR-007 · Cosmos: partición por <code>accountId</code>, Session, TTL</summary><div class="body">
+    <p><span class="tag t-why">Por qué</span> La consulta dominante del motor es "el historial reciente de esta cuenta". Con <code>accountId</code> como shard key ese historial vive en una sola partición y su costo (RU) es estable con el volumen. La clave es <strong>inmutable tras la primera escritura</strong>: elegir mal obligaría a migrar todo.</p>
+    <p><span class="tag t-code">En el código</span> El contrato del evento declara <code>accountId</code> como clave de partición del historial — el diseño queda documentado en el propio tipo.</p>
+    <span class="src"><b>src/main/java/com/centinela/shared/event/TransactionEvent.java:23</b></span>
+    <pre class="code-adr"><code> * @param accountId cuenta duena de la transaccion y clave de particion del historial</code></pre>
+  </div></details>
+
+  <details><summary>ADR-008 · GitHub Actions con OIDC federado</summary><div class="body">
+    <p><span class="tag t-why">Por qué</span> El repo ya vive en GitHub y, sobre todo, con OIDC <strong>no hay credencial que robar</strong>: GitHub emite un token de vida corta atado a este repo y rama.</p>
+    <p><span class="tag t-lose">Se sacrifica</span> Los runners viven fuera de la VNet, así que el <em>bootstrap</em> de PostgreSQL no puede correr desde el pipeline; queda manual. Azure DevOps con agente en la VNet sí podría.</p>
+    <p><span class="tag t-code">En el código</span> El login no recibe contraseña alguna — solo tres <em>identificadores</em> (client/tenant/subscription), inútiles sin un token firmado por GitHub.</p>
+    <span class="src"><b>.github/workflows/cd.yml:107</b></span>
+    <pre class="code-adr"><code>- uses: azure/login@v2
+  with:
+    client-id:       ${{ secrets.AZURE_CLIENT_ID }}       # identificadores,
+    tenant-id:       ${{ secrets.AZURE_TENANT_ID }}       # no secretos:
+    subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }} # sin token OIDC no sirven</code></pre>
+  </div></details>
+
+  <details><summary>ADR-009 · Container Apps, no App Service</summary><div class="body">
+    <p><span class="tag t-why">Por qué</span> Solo Container Apps ofrece a la vez escalado por concurrencia HTTP, scale-to-zero y nivel gratuito generoso. La API de ingesta <strong>espera E/S</strong>: su CPU apenas se mueve mientras las peticiones se acumulan, así que una regla por CPU llegaría tarde.</p>
+    <p><span class="tag t-lose">Se sacrifica</span> El slot de <em>staging</em> con swap. Fuera del alcance de la semana, así que es una pérdida aceptable.</p>
+    <p><span class="tag t-code">En el código</span> La regla de escalado de la API es <code>http</code> por concurrencia, no por CPU.</p>
+    <span class="src"><b>scripts/deploy-containers.sh:191-193</b></span>
+    <pre class="code-adr"><code>--scale-rule-name http-concurrency \
+--scale-rule-type http \
+--scale-rule-http-concurrency "$API_CONCURRENT_REQUESTS" \   # 10 peticiones en vuelo, no %CPU</code></pre>
+  </div></details>
+
+  <details><summary>ADR-010 · Una métrica de escalado por componente</summary><div class="body">
+    <p><span class="tag t-why">Por qué</span> La API escala por <strong>concurrencia HTTP</strong> (su cuello es la espera); el motor por concurrencia de invocaciones que le entrega Event Grid; el explicador por <strong>trabajo pendiente</strong> y escala a cero, porque no recibe peticiones. Una sola métrica para los tres sería más simple y estaría mal en dos.</p>
+    <p><span class="tag t-code">En el código</span> Los tres perfiles son distintos por defecto — nótese el explicador con piso <strong>0</strong>.</p>
+    <span class="src"><b>scripts/deploy-containers.sh:32-38</b></span>
+    <pre class="code-adr"><code>API_CONCURRENT_REQUESTS=10    # API: concurrencia HTTP
+SCORING_MIN_REPLICAS=0 / MAX=8   # motor: por invocaciones (Event Grid)
+EXPLAINER_MIN_REPLICAS=0 / MAX=3 # explicador: trabajo pendiente, escala a CERO</code></pre>
+  </div></details>
+
+  <details><summary>ADR-011 · ACR Basic (pagar por no tener un secreto)</summary><div class="body">
+    <p><span class="tag t-why">Por qué</span> ACR no tiene nivel gratuito. Se pagan ~1,20 USD/semana porque permite <em>pull</em> por Managed Identity. La alternativa gratuita (GHCR) obligaría a guardar un <em>Personal Access Token</em> como secreto de la app — justo la credencial de larga duración que el proyecto evita.</p>
+    <p><span class="tag t-code">En el código</span> Registro Basic, usuario administrador apagado, pull por identidad — se paga por que no exista un secreto.</p>
+    <span class="src"><b>scripts/provision-container-registry.sh:133,141</b></span>
+    <pre class="code-adr"><code>az acr create ... --sku Basic --admin-enabled false   # sin credencial de registro
+# el pull lo hace la Managed Identity con rol AcrPull (arriba, ADR-003)</code></pre>
+  </div></details>
+
+  <details><summary>ADR-012 · La traza viaja dentro del mensaje</summary><div class="body">
+    <p><span class="tag t-why">Por qué</span> El recorrido cruza dos saltos asíncronos (Event Grid y una Storage Queue) entre cuatro procesos. En un salto asíncrono no hay llamada HTTP que el agente pueda instrumentar; sin el contexto <em>dentro</em> del mensaje, la traza se parte en cuatro trazas inconexas.</p>
+    <p><span class="tag t-code">En el código</span> El contrato normaliza el <code>traceparent</code> en su constructor: uno ausente o corrupto <strong>abre una traza nueva</strong> en vez de rechazar el mensaje — la telemetría nunca tumba el negocio.</p>
+    <span class="src"><b>src/main/java/com/centinela/shared/event/TransactionEvent.java:49</b></span>
+    <pre class="code-adr"><code>public TransactionEvent {
+    // un traceparent ausente/corrupto NO rechaza la transaccion: abre traza nueva
+    traceparent = TraceContext.parseOrNewRoot(traceparent).toTraceparent();
+}</code></pre>
+  </div></details>
+
+  <details><summary>ADR-013 · Qué se satura primero (PostgreSQL)</summary><div class="body">
+    <p><span class="tag t-why">Por qué</span> La API y el motor escalan; Cosmos está particionado. PostgreSQL es <strong>una sola instancia B1ms</strong> y el límite no es la CPU sino las conexiones simultáneas que abre cada réplica nueva del consumidor y del explicador.</p>
+    <p><span class="tag t-code">En el código</span> Tres mitigaciones concretas: techo de réplicas del explicador, lotes acotados, y un <strong>índice parcial</strong> para que el sondeo no recorra toda la tabla de casos.</p>
+    <span class="src"><b>deploy-containers.sh:38</b> · <b>CaseExplanationConfiguration.java:36</b> · <b>V4__case_explanation_and_verification.sql:40</b></span>
+    <pre class="code-adr"><code>EXPLAINER_MAX_REPLICAS=3                              # techo de conexiones
+@Value("${centinela.explainer.batch-size:25}")       # lotes de 25, no toda la tabla
+
+CREATE INDEX idx_fraud_case_pending_explanation
+    ON fraud_case (opened_at)
+    WHERE explanation_state = 'PENDING';              -- indice PARCIAL</code></pre>
+  </div></details>
+
+  <details><summary>ADR-014 · Qué cambiaríamos al empezar de nuevo</summary><div class="body">
+    <p><span class="tag t-why">Reflexión</span> Cuatro cosas, por lo que más costaron:</p>
+    <ol>
+      <li><strong>Instrumentar desde la línea uno.</strong> No costó añadir logs, sino que los contratos <em>no tenían dónde llevar</em> el contexto de traza. Ampliar dos contratos ya desplegados costó más que el campo desde el inicio.</li>
+      <li>Diseñar las reglas pensando en cómo se explicarían.</li>
+      <li>API de consulta desde la Semana 1.</li>
+      <li>Contenedores desde el principio (paridad local↔nube).</li>
+    </ol>
+    <p><span class="tag t-code">La cicatriz, en el código</span> El campo <code>traceparent</code> que hoy vive en el contrato es exactamente lo que la lección #1 dice que debió existir desde la Semana 2 — se añadió tarde, de forma aditiva.</p>
+    <span class="src"><b>src/main/java/com/centinela/shared/event/TransactionEvent.java:36</b></span>
+    <pre class="code-adr"><code>public record TransactionEvent(
+        String eventId, String transactionId, String accountId,
+        OffsetDateTime occurredAt, String blobPath,
+        String traceparent,          // &lt;- deberia haber estado aqui desde la Semana 2
+        String schemaVersion) {</code></pre>
+    <p><em>Lo que no cambiaríamos:</em> la red privada y Managed Identity desde el día uno. Incómodas al principio, evitaron el problema que no se arregla después.</p>
+  </div></details>
+</section>
+
+<!-- ========================= 9 ========================= -->
+<section id="despliegue">
+  <h2>9 · Despliegue paso a paso</h2>
+  <p class="lead">Desde cualquier sistema operativo. Los scripts son <strong>Bash e idempotentes</strong>; casi todos aceptan <code>--validate-only</code>.</p>
+
+  <h3>Preparar la máquina</h3>
+  <table>
+    <tr><th>SO</th><th>Cómo</th></tr>
+    <tr><td>Windows</td><td>Git Bash (los scripts no corren en cmd/PowerShell). <code>winget install Git.Git Microsoft.AzureCLI Docker.DockerDesktop EclipseAdoptium.Temurin.21.JDK Apache.Maven PostgreSQL.PostgreSQL.16</code></td></tr>
+    <tr><td>macOS</td><td><code>brew install git azure-cli docker openjdk@21 maven libpq</code></td></tr>
+    <tr><td>Linux</td><td><code>apt-get install git openjdk-21-jdk maven postgresql-client</code> + Azure CLI y Docker (scripts oficiales)</td></tr>
+  </table>
+
+  <h3>Orden de despliegue</h3>
+  <div class="mermaid">
+flowchart TB
+  A[az login + .env] --> B[Registrar proveedores]
+  B --> C[Red privada + DNS]
+  C --> D[Cosmos + PostgreSQL]
+  D --> E[Key Vault + identidad de datos]
+  E --> F[Event Grid + RBAC mensajería]
+  F --> G[Entra ID: app + tokens v2]
+  G --> H[Bootstrap PostgreSQL]
+  H --> I[ACR + entorno Container Apps]
+  I --> J[Observabilidad + alerta]
+  J --> K[Construir/publicar/desplegar imágenes]
+  K --> L[Verificar salud]
+  </div>
+
+  <details><summary>Los comandos, en orden</summary><div class="body">
+    <pre><code>az login &amp;&amp; az account set --subscription "&lt;SUBSCRIPTION_ID&gt;"
+cp .env.example .env            # y editar los 5 valores
+
+# Registrar proveedores (una vez por suscripcion nueva)
+for p in Microsoft.ContainerRegistry Microsoft.App Microsoft.KeyVault \
+         Microsoft.EventGrid Microsoft.DocumentDB Microsoft.DBforPostgreSQL \
+         Microsoft.OperationalInsights Microsoft.Insights Microsoft.ManagedIdentity; do
+  az provider register --namespace "$p" --wait
+done
+
+bash scripts/provision-network-containerapps.sh
+bash scripts/provision-cosmos.sh
+bash scripts/provision-postgres.sh
+bash scripts/provision-keyvault.sh
+bash scripts/provision-containerapps-identity.sh
+APPS_PID=$(az identity show -n "id-cent-apps" -g "$RESOURCE_GROUP" --query principalId -o tsv)
+bash scripts/provision-eventgrid.sh --publisher-principal "$APPS_PID" \
+     --consumer-principal "$APPS_PID" --function-principal "$APPS_PID"
+bash scripts/provision-entra-app.sh
+bash scripts/configure-postgres-managed-identity.sh
+bash scripts/provision-container-registry.sh
+bash scripts/provision-container-apps.sh
+CENTINELA_ALERT_EMAIL="..." bash scripts/provision-observability.sh
+bash scripts/deploy-containers.sh --tag "$(git rev-parse --short HEAD)"
+bash scripts/verify/verify-deployment-health.sh</code></pre>
+  </div></details>
+
+  <div class="note"><strong>Tropiezos reales que la guía evita:</strong> proveedores sin registrar (error que <em>parece</em> de permisos), la subred de contenedores debe ser <code>/23</code>, Cosmos exige índice de <code>occurredAt</code>, los tokens de Entra deben ser v2 (aud = appId pelado), el <em>bootstrap</em> de PostgreSQL abre una ventana temporal de firewall que se cierra sola, y las imágenes fijan <code>file.encoding=UTF-8</code> (el JRE Alpine arranca en ASCII).</div>
+
+  <h3>Entorno local (sin Azure)</h3>
+  <pre><code>bash start.sh    # Azurite + PostgreSQL + Mongo + API + explicador (docker-compose)
+bash stop.sh     # desmonta todo, incluidos volumenes</code></pre>
+  <p>No hay emulador local de Event Grid; el salto API→motor se simula con <code>scripts/local/simulate-scoring.sh</code>.</p>
+
+  <h3>Control de crédito</h3>
+  <pre><code>bash scripts/shutdown-daily.sh          # apaga lo que factura por tiempo
+bash scripts/shutdown-daily.sh --start  # lo reenciende</code></pre>
+</section>
+
+<!-- ========================= 10 ========================= -->
+<section id="cicd">
+  <h2>10 · Pipeline CI/CD</h2>
+  <p class="lead">GitHub Actions con OIDC federado — cero credenciales almacenadas.</p>
+
+  <h3><code>ci.yml</code> — en cada PR</h3>
+  <ul>
+    <li><strong>pruebas:</strong> <code>mvn verify</code> en los dos módulos (unitarias + integración).</li>
+    <li><strong>seguridad:</strong> barrido de secretos en el árbol <em>y en el historial</em> de Git; verifica que <code>.env</code> no está versionado.</li>
+    <li><strong>análisis-estático:</strong> <code>shellcheck</code> sobre los scripts (compuerta a nivel <em>error</em>; warnings informativos).</li>
+  </ul>
+
+  <h3><code>cd.yml</code> — al integrar a <code>main</code></h3>
+  <p>Cinco etapas encadenadas con <code>needs</code>, de modo que una prueba fallida detiene todo <strong>antes</strong> de construir imagen: construir → probar → imágenes → publicar en ACR → desplegar → verificar salud.</p>
+  <div class="note"><strong>Interruptor de despliegue.</strong> Las etapas que tocan Azure se activan con la variable <code>AZURE_DEPLOY_ENABLED=true</code>. Sin ella, un <em>merge</em> corre CI y se detiene limpio en lugar de fallar por falta de OIDC. El cableado del despliegue automático está intacto; solo espera su configuración de una vez.</div>
+</section>
+
+<!-- ========================= 11 ========================= -->
+<section id="ciclo">
+  <h2>11 · Ciclo de vida de una petición (teoría vs. código)</h2>
+  <p class="lead">El recorrido completo de una transacción, etapa por etapa. Concepto arriba; el código real que lo ejecuta, debajo.</p>
+
+  <div class="mermaid">
+sequenceDiagram
+  autonumber
+  participant C as Cliente
+  participant API as API
+  participant EG as Event Grid
+  participant M as Motor
+  participant Q as Cola
+  participant CO as Consumidor
+  participant X as Explicador
+  C->>API: POST /transactions
+  API->>API: Persiste blob + abre traza
+  API->>EG: publica transaction-event-v1 (con traceparent)
+  API-->>C: 202 Accepted
+  EG->>M: evento
+  M->>M: 4 reglas vs historial (Cosmos)
+  M->>Q: flagged-case-v1 (si supera umbral)
+  Q->>CO: mensaje
+  CO->>CO: abre caso (PENDING) en PostgreSQL
+  X->>X: redacta explicación (asíncrono)
+  </div>
+
+  <div class="step" data-n="1">
+    <h3>Se abre la traza (antes que la seguridad)</h3>
+    <div class="concept">Una petición rechazada con 401/429 también debe quedar trazada — el fallo invisible es el que no se puede diagnosticar.</div>
+    <pre><code>TraceContext ctx = TraceContext.parseOrNewRoot(request.getHeader("traceparent"));
+TraceContextHolder.set(ctx);
+try { filterChain.doFilter(request, response); }
+finally { TraceContextHolder.clear(); }  // el hilo se reutiliza</code></pre>
+  </div>
+  <div class="step" data-n="2">
+    <h3>La API acusa recibo sin esperar</h3>
+    <div class="concept">Persiste, publica y responde 202. Mide la etapa <code>INGEST_API</code>: el tiempo que espera el cliente.</div>
+    <pre><code>useCase.ingest(mapper.toCommand(req));
+return ResponseEntity.accepted()
+    .body(TransactionReceiptResponse.received(req.transactionId()));</code></pre>
+  </div>
+  <div class="step" data-n="3">
+    <h3>El motor puntúa contra el historial</h3>
+    <div class="concept">Lee el umbral una sola vez y lo guarda con el score — es configurable en caliente.</div>
+    <pre><code>int threshold = thresholdProvider.getThreshold();       // UNA vez
+for (ScoringRule rule : rules) rule.evaluate(tx, history).ifPresent(hits::add);
+if (score.isFlagged()) flaggedCasePublisher.publishFlaggedCase(score);</code></pre>
+  </div>
+  <div class="step" data-n="4">
+    <h3>El explicador redacta con correspondencia estricta</h3>
+    <div class="concept">Si falta un dato, la frase se empobrece en vez de inventarlo.</div>
+    <pre><code>rule.decimal("baselineAverageIntervalMinutes")
+    .filter(v -> v > 0)                                 // solo si el motor lo midió
+    .ifPresent(v -> sentence.append(", cuando el promedio es de 1 cada ")
+                            .append(humanizeMinutes(Math.round(v))));</code></pre>
+  </div>
+
+  <div class="ok-box"><strong>Traza real capturada en Azure:</strong> RAW_PERSIST 16ms · EVENT_PUBLISH 7ms · INGEST_API 25ms · SCORING 235ms · CASE_OPEN 721ms · EXPLANATION 1044ms — <strong>un solo traceId</strong>, seis etapas.</div>
+</section>
+
+<!-- ========================= 12 ========================= -->
+<section id="observabilidad">
+  <h2>12 · Observabilidad</h2>
+  <p class="lead">La instrumentación permite responder cinco preguntas en ejecución, y reconstruir el recorrido de una transacción individual.</p>
+
+  <h3>Las cinco preguntas de operación</h3>
+  <ol>
+    <li>Latencia del scoring: promedio y percentil superior.</li>
+    <li>Tasa de transacciones procesadas por unidad de tiempo.</li>
+    <li>Proporción de transacciones marcadas sobre el total.</li>
+    <li>Punto exacto de fallo de una transacción que no generó caso.</li>
+    <li>Componente de mayor latencia del pipeline.</li>
+  </ol>
+  <p>Cada etapa emite una línea en formato clave-valor (no prosa), consultable en KQL sin expresiones regulares frágiles:</p>
+  <pre><code>stage=SCORING transactionId=tx-001 traceId=13a0… durationMs=235 outcome=SUCCESS</code></pre>
+
+  <h3>Alerta con umbral justificado</h3>
+  <p>Condición: más de 5 transacciones ingeridas sin puntuar en 15 minutos. Es la única condición que significa "un cliente recibió acuse y el fraude no se evaluó" — exige intervención humana, no se resuelve reintentando. Cinco (no uno) porque el reintento de Event Grid cubre fallos aislados.</p>
+
+  <h3>Verificación y evidencia</h3>
+  <table>
+    <tr><th>Script</th><th>Qué prueba</th></tr>
+    <tr><td><code>verify-trace.sh</code></td><td>Traza individual con tiempos por etapa</td></tr>
+    <tr><td><code>verify-scaling.sh</code> + <code>generate-load.sh</code></td><td>Escalado bajo carga (réplicas suben y bajan)</td></tr>
+    <tr><td><code>run-e2e-fraud.sh</code></td><td>Recorrido completo de una transacción fraudulenta</td></tr>
+    <tr><td><code>verify-practices.sh</code></td><td>Arquitectura, migraciones, instrumentación, secretos</td></tr>
+    <tr><td>7 agentes en <code>.claude/agents/</code></td><td>Auditoría reproducible (infra, secretos, contenedores, CI/CD, observabilidad, explicador, prácticas)</td></tr>
+  </table>
+</section>
+
+<!-- ========================= 13 ========================= -->
+<section id="archivos">
+  <h2>13 · Mapa de archivos — para qué sirve cada uno</h2>
+  <p class="lead">El proyecto son <strong>dos repositorios independientes</strong>. Aquí está, archivo por archivo, para qué existe cada uno — extraído del propio encabezado de cada archivo, no inventado.</p>
+
+  <div class="grid">
+    <div class="card"><h4>📦 <code>Centinela</code></h4><p>El sistema: la API, el motor, el explicador, la infraestructura y toda la automatización de despliegue. Es lo que se monitorea.</p></div>
+    <div class="card"><h4>🧪 <code>centinela-lab</code></h4><p>El banco de pruebas: un <strong>cliente externo puro</strong>, sin código compartido, que dispara transacciones (una por causal de fraude + un control normal) contra la API pública de Centinela.</p></div>
+  </div>
+  <div class="note"><strong>Por qué dos repos y no uno.</strong> El lab consume Centinela como lo haría un originador real: por HTTP, con su token. No comparte clases ni base de datos — de hecho copia el contrato a propósito (<code>TransactionPayload</code>) para no depender de él. Así, que el lab funcione <em>prueba</em> que la integración externa funciona; si compartieran código, no probaría nada.</div>
+
+  <!-- ============ REPO 1 ============ -->
+  <h3>📦 Repositorio 1 · <code>Centinela</code> (el sistema)</h3>
+
+  <details open><summary>Raíz del repositorio</summary><div class="body">
+    <table>
+      <tr><th>Archivo</th><th>Para qué sirve</th></tr>
+      <tr><td><code>README.md</code></td><td>Panorama del repo e inicio rápido (entorno local en un comando, resumen de despliegue).</td></tr>
+      <tr><td><code>DESPLIEGUE.md</code></td><td>Checklist y guía operativa del despliegue completo.</td></tr>
+      <tr><td><code>GUIA_TECNICA_SCRIPTS.md</code></td><td>Referencia técnica de todos los scripts de <code>scripts/</code>: qué hace cada uno y en qué orden.</td></tr>
+      <tr><td><code>pom.xml</code></td><td>Build Maven de la aplicación principal: módulos, dependencias, Spring Boot, ArchUnit y <code>azure-identity</code>.</td></tr>
+      <tr><td><code>Dockerfile</code></td><td>Imagen multietapa de la aplicación — <strong>la misma</strong> sirve para la API y para el explicador (cambia el perfil, no la imagen). Fija <code>file.encoding=UTF-8</code>.</td></tr>
+      <tr><td><code>docker-compose.yml</code></td><td>Entorno local completo: Azurite (Blob+Queue), PostgreSQL, Mongo, la API y el explicador.</td></tr>
+      <tr><td><code>start.sh</code> / <code>stop.sh</code></td><td>Levantar / desmontar todo el entorno local (incluidos volúmenes) con un solo comando.</td></tr>
+      <tr><td><code>.env.example</code></td><td>Plantilla de variables de entorno. El <code>.env</code> real <strong>nunca</strong> se versiona.</td></tr>
+      <tr><td><code>applicationinsights.json</code></td><td>Configuración del agente de telemetría de Application Insights (muestreo, nombre del rol).</td></tr>
+      <tr><td><code>.dockerignore</code></td><td>Qué queda fuera del contexto de construcción de la imagen (evita hornear secretos o basura).</td></tr>
+      <tr><td><code>.gitattributes</code></td><td>Normaliza fin de línea a <code>LF</code> en los <code>.sh</code>, para que los scripts corran igual en Windows y Linux.</td></tr>
+      <tr><td><code>.gitignore</code></td><td>Exclusiones del control de versiones — incluye <code>.env</code> y artefactos de build.</td></tr>
+    </table>
+  </div></details>
+
+  <details><summary><code>src/</code> — la aplicación (hexagonal, 10 módulos)</summary><div class="body">
+    <p>Cada carpeta es un módulo con sus tres capas (<code>domain/application/infrastructure</code>). El detalle de responsabilidades está en la <a href="#arquitectura">sección 3</a>; aquí, el mapa:</p>
+    <table>
+      <tr><th>Ruta</th><th>Para qué sirve</th></tr>
+      <tr><td><code>CentinelaApplication.java</code></td><td>Punto de arranque de Spring Boot (la app principal).</td></tr>
+      <tr><td><code>transactioningestion/</code></td><td>Ingesta: recibe la transacción, la persiste en crudo y publica el evento.</td></tr>
+      <tr><td><code>casemanagement/</code></td><td>Apertura de casos, auditoría inmutable y consumidor de la cola.</td></tr>
+      <tr><td><code>caseexplanation/</code></td><td>Explicador determinista por plantilla.</td></tr>
+      <tr><td><code>caseinquiry/</code></td><td>API de consulta (análisis de transacción y caso).</td></tr>
+      <tr><td><code>documentstorage/</code> · <code>documentverification/</code></td><td>Carga y extracción de documentos, con manejo de fallos.</td></tr>
+      <tr><td><code>scoringrecord/</code></td><td>Lectura del registro que el motor dejó en Cosmos.</td></tr>
+      <tr><td><code>identityaccess/</code></td><td>Seguridad HTTP: validación de JWT y app roles.</td></tr>
+      <tr><td><code>shared/</code></td><td>Contratos de mensaje, contexto de traza W3C y telemetría por etapas.</td></tr>
+    </table>
+  </div></details>
+
+  <details><summary><code>scoring-function/</code> — el motor (módulo independiente)</summary><div class="body">
+    <table>
+      <tr><th>Archivo</th><th>Para qué sirve</th></tr>
+      <tr><td><code>src/</code></td><td>Las 4 reglas de scoring y el disparador de Event Grid (<code>ScoreTransactionFunction</code>) que lee el historial de Cosmos y encola el caso.</td></tr>
+      <tr><td><code>Dockerfile</code></td><td>Imagen del motor: Azure Functions (Java) empaquetada en contenedor.</td></tr>
+      <tr><td><code>host.json</code></td><td>Configuración del host de Functions (extensiones, tiempos).</td></tr>
+      <tr><td><code>pom.xml</code></td><td>Build Maven del motor, independiente del de la app principal.</td></tr>
+    </table>
+  </div></details>
+
+  <details><summary><code>scripts/</code> · Aprovisionamiento de Azure (<code>provision-*.sh</code>)</summary><div class="body">
+    <table>
+      <tr><th>Script</th><th>Para qué sirve</th></tr>
+      <tr><td><code>provision-network.sh</code></td><td>VNet + 2 subredes + zonas DNS privadas + integración VNet (topología Semana 1).</td></tr>
+      <tr><td><code>provision-network-containerapps.sh</code></td><td>Red privada para la topología final: Container Apps en lugar de App Service.</td></tr>
+      <tr><td><code>provision-storage.sh</code></td><td>Storage Account + contenedores + colas por ambiente.</td></tr>
+      <tr><td><code>provision-cosmos.sh</code></td><td>Cosmos DB for MongoDB (almacén de transacciones y scores).</td></tr>
+      <tr><td><code>provision-postgres.sh</code></td><td>PostgreSQL Flexible Server privado (almacén de casos).</td></tr>
+      <tr><td><code>provision-keyvault.sh</code></td><td>Key Vault + migración del único secreto real de Semana 2.</td></tr>
+      <tr><td><code>provision-eventgrid.sh</code></td><td>Event Grid Topic + cola de casos + RBAC de mensajería.</td></tr>
+      <tr><td><code>provision-entra-app.sh</code></td><td>Registro de Entra ID que representa la API, con sus app roles y tokens v2.</td></tr>
+      <tr><td><code>provision-app-service.sh</code></td><td>App Service Plan + Web App + slot staging (topología Semana 1, hoy detenida).</td></tr>
+      <tr><td><code>provision-container-registry.sh</code></td><td>ACR privado con pull sin credenciales (Managed Identity, admin apagado).</td></tr>
+      <tr><td><code>provision-container-apps.sh</code></td><td>Entorno de Container Apps y las reglas de escalado.</td></tr>
+      <tr><td><code>provision-containerapps-identity.sh</code></td><td>Identidad de las Container Apps y sus permisos de datos.</td></tr>
+      <tr><td><code>provision-github-oidc.sh</code></td><td>Identidad federada del pipeline (OIDC), sin ninguna credencial almacenada.</td></tr>
+      <tr><td><code>provision-observability.sh</code></td><td>Application Insights + la alerta que exige intervención humana.</td></tr>
+    </table>
+  </div></details>
+
+  <details><summary><code>scripts/</code> · Configuración correctiva (<code>configure-*.sh</code>) y RBAC</summary><div class="body">
+    <table>
+      <tr><th>Script</th><th>Para qué sirve</th></tr>
+      <tr><td><code>configure-private-endpoints.sh</code></td><td>Crea los Private Endpoints de Blob y Queue y los vincula a la VNet.</td></tr>
+      <tr><td><code>configure-postgres-managed-identity.sh</code></td><td>Da de alta el principal de la BD por Managed Identity (abre y cierra sola una ventana temporal de firewall).</td></tr>
+      <tr><td><code>configure-function-host-storage.sh</code></td><td>Completa la ruta de Storage privada que usa el host de la Function.</td></tr>
+      <tr><td><code>assign-rbac.sh</code></td><td>Asigna el RBAC de mínimo privilegio (plano de control y de datos).</td></tr>
+    </table>
+  </div></details>
+
+  <details><summary><code>scripts/</code> · Despliegue y operación</summary><div class="body">
+    <table>
+      <tr><th>Script</th><th>Para qué sirve</th></tr>
+      <tr><td><code>deploy-all.sh</code></td><td>Un solo comando levanta toda la infraestructura entregada hasta el momento, en orden.</td></tr>
+      <tr><td><code>deploy-week1.sh</code> · <code>deploy-week2.sh</code></td><td>Orquestadores de despliegue de cada semana.</td></tr>
+      <tr><td><code>deploy-application.sh</code></td><td>Despliega un único artefacto Java al App Service (topología Semana 1).</td></tr>
+      <tr><td><code>deploy-containers.sh</code></td><td>Crea o actualiza las <strong>tres</strong> Container Apps (API, motor, explicador) con sus reglas de escalado.</td></tr>
+      <tr><td><code>deploy-scoring-function.sh</code></td><td>Aprovisiona, configura y despliega el motor de scoring.</td></tr>
+      <tr><td><code>watch-deploy.sh</code></td><td>Barra de avance en vivo de un despliegue en curso (que tarda 30-40 min).</td></tr>
+      <tr><td><code>shutdown-daily.sh</code></td><td>Apaga al cierre de la jornada lo que factura por tiempo; <code>--start</code> lo reenciende.</td></tr>
+      <tr><td><code>test-ha.sh</code></td><td>Demuestra la continuidad de la API al reducir temporalmente de dos réplicas a una.</td></tr>
+      <tr><td><code>destroy-week1.sh</code></td><td>Elimina el Resource Group con confirmación segura.</td></tr>
+      <tr><td><code>validate-queue.sh</code></td><td>Comprobación puntual de la cola técnica.</td></tr>
+    </table>
+  </div></details>
+
+  <details><summary><code>scripts/verify/</code> · Verificación viva sobre Azure (evidencia Semana 3)</summary><div class="body">
+    <table>
+      <tr><th>Script</th><th>Para qué sirve</th></tr>
+      <tr><td><code>verify-deployment-health.sh</code></td><td>Comprueba que lo desplegado <em>responde</em> de verdad (no solo que <code>az</code> devolvió cero).</td></tr>
+      <tr><td><code>verify-trace.sh</code></td><td>Reconstruye el recorrido completo de UNA transacción, con tiempos por etapa.</td></tr>
+      <tr><td><code>verify-scaling.sh</code> + <code>generate-load.sh</code></td><td>Genera carga sostenida y observa las réplicas subir y bajar (evidencia de escalado).</td></tr>
+      <tr><td><code>run-e2e-fraud.sh</code></td><td>Recorrido completo de una transacción fraudulenta sobre el sistema desplegado.</td></tr>
+      <tr><td><code>verify-explainer-correspondence.sh</code></td><td>Verifica que la explicación de un caso real corresponde con lo que el motor decidió.</td></tr>
+      <tr><td><code>verify-registry.sh</code></td><td>Estado real del registro: SKU Basic, ausencia de usuario admin, pull por identidad.</td></tr>
+      <tr><td><code>verify-observability-setup.sh</code> · <code>verify-alert.sh</code></td><td>Que la telemetría está creada y acotada, y que la alerta tiene condición/umbral/destinatario correctos.</td></tr>
+      <tr><td><code>verify-cost.sh</code></td><td>Reporte del crédito consumido y de lo que factura ahora mismo.</td></tr>
+      <tr><td><code>verify-practices.sh</code></td><td>Calidad estructural sin Azure: arquitectura, migraciones, instrumentación, secretos.</td></tr>
+      <tr><td><code>report-image-size.sh</code></td><td>Tamaño de las imágenes con desglose por capa.</td></tr>
+    </table>
+  </div></details>
+
+  <details><summary><code>scripts/tests/</code> · Suites de aceptación por issue (TEST-Sx-…)</summary><div class="body">
+    <p>Cada script reproduce el criterio de aceptación de una historia. Son la evidencia de que cada issue se cumplió, ejecutable. Los principales:</p>
+    <table>
+      <tr><th>Script</th><th>Verifica</th></tr>
+      <tr><td><code>test-pipeline-e2e.sh</code></td><td>El pipeline completo: API → Blob/Event Grid → score en Cosmos → Queue → caso en PostgreSQL.</td></tr>
+      <tr><td><code>test-transaction-e2e.sh</code> · <code>test-document-upload-e2e.sh</code></td><td>Ingesta 202 y carga documental 201, de extremo a extremo.</td></tr>
+      <tr><td><code>test-decoupling.sh</code> · <code>test-threshold-hot-reload.sh</code></td><td>Desacoplamiento ingesta/análisis y cambio de umbral en caliente.</td></tr>
+      <tr><td><code>test-analyst-rbac.sh</code> · <code>test-environment-isolation.sh</code></td><td>Mínimo privilegio del Analista y aislamiento entre ambientes.</td></tr>
+      <tr><td><code>audit-git-secrets.sh</code> · <code>scan-repository.sh</code></td><td>Barrido de secretos en el <em>historial</em> y en el árbol de trabajo.</td></tr>
+      <tr><td><code>capture-week3-evidence.sh</code></td><td>Captura la evidencia de las issues de Semana 3 verificables sin Azure.</td></tr>
+      <tr><td><code>validate-*.sh</code> (storage, cosmos, postgres, network, keyvault, eventgrid, rbac, entra-roles, managed-identity…)</td><td>Validación puntual de cada recurso aprovisionado, por issue.</td></tr>
+      <tr><td><code>test-destroy-safety.sh</code> · <code>test-clean-deploy.sh</code> · <code>test-destroy-rebuild-cleanup.sh</code></td><td>Reproducibilidad: destruir, reconstruir desde cero y limpiar con seguridad.</td></tr>
+      <tr><td><code>check-appservice-quota.sh</code></td><td>Diagnóstico de cuota de App Service por región (el que reveló el giro a Container Apps).</td></tr>
+    </table>
+  </div></details>
+
+  <details><summary><code>scripts/lib/</code> y <code>scripts/local/</code></summary><div class="body">
+    <table>
+      <tr><th>Archivo</th><th>Para qué sirve</th></tr>
+      <tr><td><code>lib/common.sh</code></td><td>Utilidades compartidas por todos los scripts: logging, manejo de errores, reintentos, enmascarado de secretos y los helpers de asignación de roles vía REST.</td></tr>
+      <tr><td><code>lib/parameters.sh</code></td><td>Carga y validación de parámetros del <code>.env</code> (requiere <code>common.sh</code> cargado).</td></tr>
+      <tr><td><code>local/simulate-scoring.sh</code></td><td>Hace en local lo que el motor haría en Azure — simula el salto API→motor que no tiene emulador local.</td></tr>
+    </table>
+  </div></details>
+
+  <details><summary><code>.github/workflows/</code>, <code>.claude/</code> y <code>docs/</code></summary><div class="body">
+    <table>
+      <tr><th>Ruta</th><th>Para qué sirve</th></tr>
+      <tr><td><code>.github/workflows/ci.yml</code></td><td>Integración continua: build, pruebas de los dos módulos, barrido de secretos, shellcheck.</td></tr>
+      <tr><td><code>.github/workflows/cd.yml</code></td><td>Despliegue continuo a <code>main</code> vía OIDC (detrás del interruptor <code>AZURE_DEPLOY_ENABLED</code>).</td></tr>
+      <tr><td><code>.claude/agents/</code></td><td>Los 7 agentes de auditoría reproducible (infra, secretos, contenedores, CI/CD, observabilidad, explicador, prácticas).</td></tr>
+      <tr><td><code>docs/0…7_*/</code></td><td>Documentación por área: visión, requisitos + <em>schemas</em> de contrato, arquitectura + ADR, seguridad, infraestructura y runbooks, issues y trazabilidad, testing, gestión.</td></tr>
+      <tr><td><code>docs/evidence/</code></td><td>Evidencia capturada por issue (salidas de comando reproducibles).</td></tr>
+      <tr><td><code>docs/observabilidad/</code></td><td>Las cinco consultas KQL de operación, ejecutables.</td></tr>
+      <tr><td><code>docs/guia-interactiva/index.html</code></td><td><strong>Esta guía.</strong></td></tr>
+      <tr><td><code>docs/INDICE_NAVEGABLE.html</code></td><td>Índice navegable de toda la documentación en un solo HTML.</td></tr>
+    </table>
+  </div></details>
+
+  <!-- ============ REPO 2 ============ -->
+  <h3>🧪 Repositorio 2 · <code>centinela-lab</code> (el banco de pruebas)</h3>
+  <p>Aplicación Spring Boot pequeña con una UI de botones: cada botón lanza un escenario contra la API pública de Centinela. Sigue la misma estructura hexagonal, pero es un cliente <strong>externo</strong>.</p>
+
+  <details open><summary>Raíz y configuración</summary><div class="body">
+    <table>
+      <tr><th>Archivo</th><th>Para qué sirve</th></tr>
+      <tr><td><code>README.md</code></td><td>Qué es el banco de pruebas y cómo apuntarlo a una instancia de Centinela.</td></tr>
+      <tr><td><code>pom.xml</code></td><td>Build Maven del lab (Spring Boot + cliente HTTP). Sin dependencia sobre Centinela.</td></tr>
+      <tr><td><code>Dockerfile</code></td><td>Imagen del lab.</td></tr>
+      <tr><td><code>.env.example</code></td><td>Plantilla: URL de la API de Centinela objetivo y el token del app role <code>SERVICE</code>.</td></tr>
+      <tr><td><code>.github/workflows/ci-cd.yml</code></td><td>Pipeline propio del lab (build y pruebas).</td></tr>
+      <tr><td><code>.gitignore</code> · <code>.dockerignore</code></td><td>Exclusiones de versionado y de contexto de build.</td></tr>
+      <tr><td><code>src/main/resources/application.yml</code></td><td>Configuración: endpoint de Centinela, credenciales, tiempos.</td></tr>
+      <tr><td><code>resources/templates/index.html</code></td><td>La página con <strong>un botón por escenario</strong> (la UI del banco de pruebas).</td></tr>
+      <tr><td><code>resources/static/lab.css</code></td><td>Estilos de esa página.</td></tr>
+    </table>
+  </div></details>
+
+  <details><summary><code>src/</code> · Código del cliente (hexagonal)</summary><div class="body">
+    <table>
+      <tr><th>Archivo</th><th>Para qué sirve</th></tr>
+      <tr><td><code>CentinelaLabApplication.java</code></td><td>Arranque de Spring Boot del lab.</td></tr>
+      <tr><td><code>domain/Scenario.java</code></td><td>Los escenarios lanzables: <strong>control normal</strong> + los 4 causales (geografía imposible, comercio de riesgo, velocidad, monto atípico).</td></tr>
+      <tr><td><code>domain/TransactionFactory.java</code></td><td>Fabrica la transacción con la forma exacta que exige cada escenario para activar (o no) su regla.</td></tr>
+      <tr><td><code>domain/TransactionPayload.java</code></td><td><strong>Copia deliberada</strong> del contrato de Centinela — no una dependencia. Es lo que mantiene los dos repos desacoplados.</td></tr>
+      <tr><td><code>domain/W3CTrace.java</code></td><td>Abre una traza W3C por escenario, para poder seguir ese recorrido dentro de Centinela durante la demo.</td></tr>
+      <tr><td><code>domain/ScenarioResult.java</code></td><td>Lo que ocurrió al lanzar un escenario (respuesta, traza, tiempos).</td></tr>
+      <tr><td><code>application/CentinelaClientPort.java</code></td><td>Puerto: todo lo que el lab sabe hacer contra Centinela.</td></tr>
+      <tr><td><code>application/ScenarioExecutionService.java</code></td><td>Orquesta el lanzamiento de un escenario (fabricar → enviar → registrar resultado).</td></tr>
+      <tr><td><code>application/LoadGenerationService.java</code></td><td>Genera carga sostenida contra la ingesta — para provocar y observar el escalado.</td></tr>
+      <tr><td><code>infrastructure/http/CentinelaHttpClient.java</code></td><td>Adaptador HTTP real: implementa el puerto llamando a la API pública de Centinela con el Bearer token.</td></tr>
+      <tr><td><code>infrastructure/web/LabController.java</code></td><td>Expone los endpoints que la UI de botones invoca.</td></tr>
+      <tr><td><code>infrastructure/config/LabConfiguration.java</code></td><td>Wiring de Spring (puertos ↔ adaptadores, cliente HTTP).</td></tr>
+      <tr><td><code>test/…/TransactionFactoryTest.java</code></td><td>Prueba que cada escenario produce la transacción con la forma esperada.</td></tr>
+    </table>
+  </div></details>
+</section>
+
+<!-- ========================= 14 ========================= -->
+<section id="referencia">
+  <h2>14 · Referencia rápida</h2>
+
+  <h3>Glosario</h3>
+  <table>
+    <tr><td><strong>Puerto / Adaptador</strong></td><td>Interfaz que el dominio define (puerto) y la infraestructura implementa (adaptador).</td></tr>
+    <tr><td><strong>Managed Identity</strong></td><td>Identidad gestionada por Azure; obtiene tokens sin credenciales almacenadas.</td></tr>
+    <tr><td><strong>OIDC federado</strong></td><td>GitHub emite un token de vida corta que Azure valida — sin secreto de service principal.</td></tr>
+    <tr><td><strong>Private Endpoint</strong></td><td>IP privada dentro de la VNet para un servicio, cerrando su acceso público.</td></tr>
+    <tr><td><strong>traceparent (W3C)</strong></td><td>Identificador de traza que viaja en los mensajes para correlacionar etapas.</td></tr>
+    <tr><td><strong>Idempotente</strong></td><td>Reejecutar produce el mismo estado; reprocesar un mensaje no duplica el caso.</td></tr>
+    <tr><td><strong>KEDA</strong></td><td>Autoescalador de Container Apps por métricas (concurrencia, cola).</td></tr>
+  </table>
+
+  <h3>Comandos más usados</h3>
+  <pre><code># Verificar todo sin Azure
+bash scripts/verify/verify-practices.sh
+
+# Recorrido E2E de fraude sobre el sistema desplegado
+bash scripts/verify/run-e2e-fraud.sh
+
+# Encender / apagar el entorno de Azure
+bash scripts/shutdown-daily.sh --start
+bash scripts/shutdown-daily.sh
+
+# Ensayo del escenario de fallo del explicador (local)
+docker compose stop explainer &amp;&amp; docker compose start explainer</code></pre>
+
+  <h3>Documentos de referencia en el repositorio</h3>
+  <ul>
+    <li><code>docs/2_Arquitectura/2_ADR_Decisiones_Arquitectura.md</code> — las 14 decisiones, completas.</li>
+    <li><code>docs/4_Infraestructura_y_Despliegue/7_Guia_Despliegue_Multiplataforma.md</code> — despliegue + roles.</li>
+    <li><code>docs/observabilidad/consultas-kql.md</code> — las cinco consultas, ejecutables.</li>
+    <li><code>docs/5_Issues_y_Trazabilidad/</code> — backlog con estados reales.</li>
+    <li><code>README.md</code> — inicio rápido.</li>
+  </ul>
+</section>
+
+<div class="footer">Centinela · guía técnica completa, generada a partir del código y la infraestructura reales del proyecto · diagramas por Mermaid.js</div>
+
+</main>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad:true, theme:'dark',
+    themeVariables:{primaryColor:'#232b36',primaryTextColor:'#e6edf3',primaryBorderColor:'#4a9eff',lineColor:'#8b98a5',fontFamily:'system-ui, sans-serif'},
+    flowchart:{useMaxWidth:true,htmlLabels:true},
+    sequence:{useMaxWidth:true}
+  });
+
+  // Resaltado del enlace activo en el sidebar segun la seccion visible
+  const links = [...document.querySelectorAll('#toc a')];
+  const map = {};
+  links.forEach(a => map[a.getAttribute('href').slice(1)] = a);
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if(e.isIntersecting){
+        links.forEach(l => l.classList.remove('active'));
+        if(map[e.target.id]) map[e.target.id].classList.add('active');
+      }
+    });
+  }, {rootMargin:'-20% 0px -70% 0px'});
+  document.querySelectorAll('main section').forEach(s => obs.observe(s));
+</script>
+</body>
+</html>
