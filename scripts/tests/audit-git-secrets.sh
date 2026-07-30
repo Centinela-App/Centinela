@@ -39,7 +39,17 @@ readonly CRED_PATTERNS='AccountKey[=][A-Za-z0-9+/=]{20,}|DefaultEndpointsProtoco
 # contienen los patrones que buscan.
 PATHSPEC=( '.' ':(exclude)*.md' ':(exclude)*.html'
            ':(exclude)scripts/tests/scan-repository.sh'
-           ':(exclude)scripts/tests/audit-git-secrets.sh' )
+           ':(exclude)scripts/tests/audit-git-secrets.sh'
+           ':(exclude)scripts/verify/verify-image-secrets.sh'
+           ':(exclude)scripts/local/simulate-scoring.sh'
+           # docker-compose.yml lleva la clave de Azurite: la constante PUBLICA y
+           # documentada del emulador, no un secreto. Coincide con el patron de
+           # credencial dura (AccountKey[=] seguido de base64 — el '=' va como
+           # clase para no auto-marcar este comentario, igual que arriba) pero no
+           # protege nada fuera del emulador local. Se excluye por la misma razon
+           # y con la misma justificacion que en scan-repository.sh — un punto
+           # ciego declarado sobre un archivo concreto y revisable, no una fuga.
+           ':(exclude)docker-compose.yml' )
 
 require_cmd git
 git rev-parse --git-dir >/dev/null 2>&1 || die "No es un repositorio git."

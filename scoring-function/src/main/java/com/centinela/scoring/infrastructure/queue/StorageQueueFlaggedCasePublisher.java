@@ -35,7 +35,8 @@ public final class StorageQueueFlaggedCasePublisher implements FlaggedCasePublis
                             .map(hit -> new TriggeredRulePayload(hit.ruleId(), hit.points()))
                             .toList(),
                     formatTimestamp(score.occurredAt().toInstant()),
-                    formatTimestamp(score.scoredAt()));
+                    formatTimestamp(score.scoredAt()),
+                    score.traceparent());
 
             SendMessageResult result = queueClient.sendMessage(
                     BinaryData.fromString(objectMapper.writeValueAsString(payload)));
@@ -64,7 +65,8 @@ public final class StorageQueueFlaggedCasePublisher implements FlaggedCasePublis
             int score,
             List<TriggeredRulePayload> triggeredRules,
             String occurredAt,
-            String scoredAt) {
+            String scoredAt,
+            String traceparent) {
     }
 
     record TriggeredRulePayload(String ruleId, int points) {

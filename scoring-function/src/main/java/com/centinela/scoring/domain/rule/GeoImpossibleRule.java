@@ -8,6 +8,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,9 +20,17 @@ import java.util.Optional;
  *
  * <p>Se activa cuando la distancia y el tiempo transcurrido entre la transaccion
  * actual y la ultima transaccion registrada implican una velocidad de desplazamiento
- * fisicamente imposible (ej. > 800 km/h).
+ * fisicamente imposible (ej. &gt; 800 km/h).
  *
- * <p>Registra en {@code observedValues} la distancia en km y el tiempo en minutos.
+ * <p><b>Que registra y por que.</b> La decision se toma con coordenadas; la explicacion
+ * se da con nombres. "La transaccion anterior se origino en Medellin hace 11 minutos;
+ * esta se origina en Madrid, a 8.000 km" exige que el motor guarde las ciudades de ambos
+ * extremos, no solo la distancia resultante. Tambien se registra el identificador de la
+ * transaccion anterior: sin el, un analista que quiera auditar la comparacion no tiene
+ * como localizar el otro extremo.
+ *
+ * <p>Las ciudades se omiten si el dato no viene en el evento o en el historial. El
+ * explicador degrada a la formulacion por distancia en vez de inventar un topónimo.
  */
 public final class GeoImpossibleRule implements ScoringRule {
 
@@ -91,16 +100,39 @@ public final class GeoImpossibleRule implements ScoringRule {
         double hoursElapsed = Math.max(secondsElapsed / 3600.0, 0.0001);
         double calculatedSpeedKmh = distanceKm / hoursElapsed;
 
-        if (calculatedSpeedKmh > maxSpeedKmh) {
-            Map<String, Object> observedValues = new LinkedHashMap<>();
-            observedValues.put("distanceKm", BigDecimal.valueOf(distanceKm).setScale(2, RoundingMode.HALF_UP).doubleValue());
-            observedValues.put("timeMinutes", timeMinutes);
-            observedValues.put("calculatedSpeedKmh", BigDecimal.valueOf(calculatedSpeedKmh).setScale(2, RoundingMode.HALF_UP).doubleValue());
-
-            return Optional.of(new RuleHit(ruleId, ruleName, points, observedValues));
+        if (calculatedSpeedKmh <= maxSpeedKmh) {
+            return Optional.empty();
         }
 
-        return Optional.empty();
+        Map<String, Object> observedValues = new LinkedHashMap<>();
+        observedValues.put("distanceKm", round(distanceKm));
+        observedValues.put("timeMinutes", timeMinutes);
+        observedValues.put("calculatedSpeedKmh", round(calculatedSpeedKmh));
+        observedValues.put("maxSpeedKmh", maxSpeedKmh);
+
+        putIfPresent(observedValues, "previousCity", prev.city());
+        putIfPresent(observedValues, "previousCountryCode", prev.countryCode());
+        putIfPresent(observedValues, "previousTransactionId", prev.transactionId());
+        observedValues.put("previousOccurredAt", DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(prevTxTime));
+
+        putIfPresent(observedValues, "currentCity", currentLocation.city());
+        putIfPresent(observedValues, "currentCountryCode", currentLocation.countryCode());
+
+        return Optional.of(new RuleHit(ruleId, ruleName, points, observedValues));
+    }
+
+    /**
+     * {@code Map.copyOf} en {@code RuleHit} rechaza valores nulos, y un campo ausente no
+     * es lo mismo que un campo vacio: si el dato no existe, la clave no debe existir.
+     */
+    private static void putIfPresent(Map<String, Object> target, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            target.put(key, value);
+        }
+    }
+
+    private static double round(double value) {
+        return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
 
     private static double calculateHaversineDistanceKm(double lat1, double lon1, double lat2, double lon2) {

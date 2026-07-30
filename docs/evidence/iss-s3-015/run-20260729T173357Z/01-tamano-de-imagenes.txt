@@ -1,0 +1,59 @@
+# Tamano y capas mas pesadas de las imagenes locales
+# comando: bash scripts/verify/report-image-size.sh  evidencia
+# ------------------------------------------------------------------
+
+IMAGEN                         TAMANO      CAPAS
+-------------------------------------------------
+centinela-api                  187 MB         10
+centinela-scoring              660 MB         20
+
+Capas mas pesadas de centinela-api:
+12.3kB	COPY --chown=centinela:centinela application…
+89.5MB	COPY --chown=centinela:centinela /build/appl…
+47.3MB	COPY --chown=centinela:centinela /agent/appl…
+8.19kB	WORKDIR /app
+41kB	RUN /bin/sh -c addgroup -S centinela && addu…
+12.3kB	COPY --chmod=755 entrypoint.sh /__cacert_ent…
+12.3kB	RUN /bin/sh -c set -eux;     echo "Verifying…
+165MB	RUN /bin/sh -c set -eux;     ARCH="$(apk --p…
+
+Medidas aplicadas para reducir el tamano
+---------------------------------------
+1. Construccion multietapa. El JDK completo, Maven y el repositorio de
+   dependencias (~700 MB juntos) viven en la etapa de build y no se copian a la
+   imagen final. Es la unica forma efectiva: borrarlos en una capa posterior los
+   deja igualmente dentro de la imagen.
+2. Imagen base JRE Alpine en vez de JDK Debian: ~180 MB menos, y solo se pierde
+   el compilador, que en produccion no hace falta.
+3. .dockerignore que excluye docs/, target/, .git/ y evidencias. Ademas de peso,
+   evita que un COPY amplio arrastre el historial del repositorio a una capa.
+4. El agente de telemetria se descarga en su propia etapa, de modo que no
+   reintroduce herramientas de descarga en la imagen final.
+
+Lo que NO se hizo y por que
+---------------------------
+No se uso jlink para un runtime a medida. Habria bajado otros ~40 MB a cambio de
+tener que recalcular el conjunto de modulos cada vez que cambia una dependencia,
+con fallos que solo aparecen en ejecucion. La relacion coste/beneficio no lo
+justifica en un proyecto de tres semanas.
+
+Por que el motor de scoring pesa mucho mas que la API
+------------------------------------------------------
+La diferencia no es descuido: son puntos de partida distintos.
+
+La API parte de eclipse-temurin:21-jre-alpine (~165 MB de base) y le suma su JAR
+(~90 MB) y el agente de telemetria (~47 MB).
+
+El motor parte de mcr.microsoft.com/azure-functions/java:4-java21, que trae el
+host de Functions, su runtime de .NET y el worker de Java. Esa base ronda los
+500 MB y NO es reducible sin abandonar el runtime de Functions — que es
+justamente lo que se decidio no hacer: el disparador de Event Grid, el reintento
+y la concurrencia ya estaban validados en Semana 2, y reescribirlos como
+servicio HTTP habria consumido la semana para llegar al mismo comportamiento
+observable.
+
+Es un coste asumido a cambio de no rehacer un componente que funcionaba. Se
+mitiga con el hecho de que el motor escala desde cero replicas y sus descargas
+son poco frecuentes, no con un intento de adelgazar una imagen base ajena.
+
+# RESULTADO: OK

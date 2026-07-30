@@ -11,7 +11,8 @@
     "score",
     "triggeredRules",
     "occurredAt",
-    "scoredAt"
+    "scoredAt",
+    "traceparent"
   ],
   "properties": {
     "transactionId": {
@@ -60,6 +61,11 @@
       "type": "string",
       "format": "date-time",
       "description": "Momento en que la Function calculo el score (RFC 3339)."
+    },
+    "traceparent": {
+      "type": "string",
+      "pattern": "^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$",
+      "description": "Mismo contexto de traza W3C que traia transaction-event-v1. Se reemite sin alterar el trace-id para que la apertura del caso y su explicacion queden bajo la misma traza que la ingesta y el scoring."
     }
   }
 }

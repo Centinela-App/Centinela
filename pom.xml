@@ -74,6 +74,29 @@
             <groupId>com.azure</groupId>
             <artifactId>azure-storage-queue</artifactId>
         </dependency>
+
+        <!--
+          Lectura del registro de scoring por el explicador de casos (Semana 3).
+          El detalle de activacion vive en Cosmos DB for MongoDB junto a la transaccion;
+          el mensaje de cola solo transporta un resumen.
+        -->
+        <dependency>
+            <groupId>org.mongodb</groupId>
+            <artifactId>mongodb-driver-sync</artifactId>
+            <version>5.2.1</version>
+        </dependency>
+
+        <!--
+          Extraccion documental ejecutada dentro del componente (plan alternativo del
+          enunciado cuando el servicio administrado de reconocimiento no esta disponible
+          en la suscripcion). No incluye OCR: un escaneo sin capa de texto se reporta
+          como ilegible en vez de devolver campos vacios.
+        -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.3</version>
+        </dependency>
         <dependency>
             <groupId>com.azure</groupId>
             <artifactId>azure-storage-blob</artifactId>

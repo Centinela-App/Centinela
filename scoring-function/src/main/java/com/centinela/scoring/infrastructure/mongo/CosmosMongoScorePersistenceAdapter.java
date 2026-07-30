@@ -10,13 +10,19 @@ import com.mongodb.client.model.ReplaceOptions;
 import org.bson.Document;
 
 import java.util.Date;
-import java.util.List;
 import java.util.Objects;
 
 import static com.mongodb.client.model.Filters.and;
 import static com.mongodb.client.model.Filters.eq;
 
-/** Upsert idempotente de la transaccion y su score en la misma shard {@code accountId}. */
+/**
+ * Upsert idempotente de la transaccion y su score en la misma shard {@code accountId}.
+ *
+ * <p>Este documento es la <b>unica fuente</b> del explicador de casos: el mensaje de cola
+ * transporta solo un resumen (regla y puntos), mientras que los valores observados que
+ * activaron cada regla viven aqui. Si un dato no se escribe en este punto, el explicador
+ * no puede recuperarlo despues sin reprocesar la transaccion.
+ */
 public final class CosmosMongoScorePersistenceAdapter implements ScorePersistencePort {
     private final MongoCollection<Document> collection;
 
@@ -33,6 +39,7 @@ public final class CosmosMongoScorePersistenceAdapter implements ScorePersistenc
                     .append("amount", transaction.amount())
                     .append("currency", transaction.currency())
                     .append("occurredAt", Date.from(transaction.occurredAt().toInstant()))
+                    .append("traceparent", score.traceparent())
                     .append("location", new Document()
                             .append("countryCode", transaction.location().countryCode())
                             .append("city", transaction.location().city())
@@ -43,6 +50,8 @@ public final class CosmosMongoScorePersistenceAdapter implements ScorePersistenc
                             .append("category", transaction.merchant().category()))
                     .append("score", new Document()
                             .append("total", score.totalScore())
+                            .append("threshold", score.threshold())
+                            .append("flagged", score.isFlagged())
                             .append("scoredAt", Date.from(score.scoredAt()))
                             .append("triggeredRules", score.triggeredRules().stream()
                                     .map(CosmosMongoScorePersistenceAdapter::ruleDocument)

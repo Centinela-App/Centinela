@@ -104,8 +104,15 @@ public class RateLimitingFilter extends OncePerRequestFilter implements Ordered 
 
     @Override
     public int getOrder() {
-        // Antes de la cadena de Spring Security para frenar avalanchas no autenticadas.
-        return Ordered.HIGHEST_PRECEDENCE;
+        // Antes de la cadena de Spring Security para frenar avalanchas no autenticadas,
+        // pero DESPUES de TracePropagationFilter, que reclama HIGHEST_PRECEDENCE.
+        //
+        // El +1 no es cosmetico. Ambos filtros declaraban el mismo orden y el desempate
+        // quedaba al azar del contenedor: si este corria primero, una peticion rechazada
+        // con 429 salia SIN traza — exactamente la peticion que mas interesa poder
+        // rastrear cuando un origen esta saturando la API. Un empate de orden entre
+        // filtros no falla: se comporta distinto entre arranques, que es peor.
+        return Ordered.HIGHEST_PRECEDENCE + 1;
     }
 
     /**

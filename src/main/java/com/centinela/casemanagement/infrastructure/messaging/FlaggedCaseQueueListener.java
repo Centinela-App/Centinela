@@ -14,6 +14,8 @@ import org.springframework.stereotype.Component;
 import com.centinela.casemanagement.application.port.in.OpenCaseUseCase;
 import com.centinela.casemanagement.domain.model.Case_;
 import com.centinela.shared.event.FlaggedCaseMessage;
+import com.centinela.shared.telemetry.PipelineStage;
+import com.centinela.shared.telemetry.StageTelemetry;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -233,6 +235,7 @@ public class FlaggedCaseQueueListener {
             return;
         }
 
+        long startedAt = StageTelemetry.startedAt();
         try {
             // Procesar el mensaje - crea caso + auditoría (en transacción)
             Case_ createdCase = openCaseUseCase.openCase(flaggedMessage);
@@ -242,7 +245,14 @@ public class FlaggedCaseQueueListener {
             messageDeleter.deleteMessage(messageId, message.popReceipt());
             log.debug("Message {} deleted from queue after successful commit", messageId);
 
+            // El traceparent viene dentro del mensaje: es lo que une esta etapa con la
+            // ingesta y el scoring bajo una sola traza pese al salto asincrono.
+            StageTelemetry.success(PipelineStage.CASE_OPEN, flaggedMessage.transactionId(),
+                    flaggedMessage.traceparent(), StageTelemetry.elapsedMillis(startedAt));
+
         } catch (Exception e) {
+            StageTelemetry.failure(PipelineStage.CASE_OPEN, flaggedMessage.transactionId(),
+                    flaggedMessage.traceparent(), StageTelemetry.elapsedMillis(startedAt), e.getMessage());
             log.error("Failed to process message {} for transaction {}: {}",
                     messageId, flaggedMessage.transactionId(), e.getMessage());
             // No eliminar el mensaje - se reintentará automáticamente

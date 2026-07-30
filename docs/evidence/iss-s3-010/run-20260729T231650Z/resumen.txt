@@ -1,0 +1,28 @@
+# ISS-S3-010 — Evidencia de escalado bajo carga
+# Componente: ca-cent-api (Azure Container Apps)
+# Metrica de escalado: concurrencia HTTP (ADR-010)
+# ------------------------------------------------------------------
+
+CICLO COMPLETO OBSERVADO SOBRE EL SISTEMA DESPLEGADO:
+
+  Fase de carga (25 req/s, subida de replicas)
+    23:16:50    1 replica    (reposo)
+    23:17:26    3 replicas   (KEDA reacciona a la concurrencia)
+    23:18:55    6 replicas   (techo alcanzado bajo carga)
+    ...          6 replicas   (sostenido mientras dura la carga)
+
+  Fase de enfriamiento (carga cesada ~23:19, ventana KEDA ~300s)
+    23:24-23:29 6 replicas   (enfriamiento: no baja de inmediato, por diseno)
+    23:29:51    1 replica    (reducido al minimo)
+
+RESULTADO: OK
+  - La carga produjo un aumento observable del numero de instancias: 1 -> 3 -> 6.
+  - Al cesar la carga, el numero de instancias se redujo: 6 -> 1.
+  - La ventana de enfriamiento de ~300s evita el vaiven por fluctuaciones cortas,
+    exactamente el comportamiento documentado en ADR-010.
+
+Una configuracion de escalado documentada NO es evidencia de que el escalado
+ocurra (enunciado 2.2). Esta es la evidencia: replicas observadas subiendo y
+bajando sobre el sistema real, no una regla en un archivo.
+
+Datos crudos: replicas.tsv (subida) y scale-in.tsv (bajada).

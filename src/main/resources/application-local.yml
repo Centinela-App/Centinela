@@ -1,0 +1,71 @@
+# =============================================================================
+# Perfil LOCAL — el sistema completo sobre docker-compose, sin Azure.
+#
+# Que cubre y que no, dicho sin adornos:
+#   - Cubre: ingesta (Blob en Azurite), apertura de casos (cola en Azurite +
+#     PostgreSQL local), explicador (Mongo local como doble de Cosmos),
+#     verificacion documental y la API de consulta.
+#   - NO cubre: el salto por Event Grid ni el motor de scoring. No existe
+#     emulador local de Event Grid. Ese tramo se simula con
+#     scripts/local/simulate-scoring.sh, que hace lo que el motor haria:
+#     escribir el registro de scoring en Mongo y encolar flagged-case-v1.
+#
+# Los nombres de host (azurite, postgres, mongo) son los servicios del
+# docker-compose.yml. Todos los valores son sobreescribibles por entorno.
+# =============================================================================
+
+spring:
+  datasource:
+    url: ${CENTINELA_POSTGRES_JDBC_URL:jdbc:postgresql://postgres:5432/centinela}
+    username: ${CENTINELA_POSTGRES_USER:centinela}
+    password: ${CENTINELA_POSTGRES_PASSWORD:centinela-local}
+
+centinela:
+  storage:
+    blob:
+      account-name: ${CENTINELA_STORAGE_ACCOUNT:devstoreaccount1}
+      container-name: ${CENTINELA_RAW_TRANSACTIONS_CONTAINER:raw-transactions-production}
+    documents:
+      account-name: ${CENTINELA_STORAGE_ACCOUNT:devstoreaccount1}
+      container-name: ${CENTINELA_VERIFICATION_DOCUMENTS_CONTAINER:verification-documents-production}
+
+  queue:
+    flagged-cases:
+      name: ${CENTINELA_FLAGGED_CASES_QUEUE:flagged-cases-production}
+
+  # Lectura del registro de scoring: Mongo local hace de doble de Cosmos. La API
+  # de Mongo es la misma; lo que NO se reproduce localmente es el particionado ni
+  # los RU de Cosmos, y ninguna prueba local debe sacar conclusiones sobre eso.
+  scoring-record:
+    enabled: true
+    cosmos:
+      connection-string: ${CENTINELA_COSMOS_MONGO_CONNECTION_STRING:mongodb://mongo:27017}
+
+  inquiry:
+    enabled: true
+
+  # En local ambos trabajadores viven en el contenedor del explicador, igual que
+  # en Azure. Apagar ese contenedor ES el ensayo del escenario de fallo.
+  explainer:
+    enabled: ${CENTINELA_EXPLAINER_ENABLED:false}
+  document-verification:
+    enabled: ${CENTINELA_DOCUMENT_VERIFICATION_ENABLED:false}
+
+  # La seguridad del perfil local es permitAll (ver LocalSecurityConfiguration).
+  # Estos valores existen solo para que el resto de la configuracion no falle al
+  # resolverse; ningun token se valida contra ellos.
+  security:
+    entra:
+      issuer-uri: http://localhost/local
+      audience: local
+      jwk-set-uri: http://localhost/local
+
+  messaging:
+    eventgrid:
+      topic-endpoint: ""
+
+logging:
+  level:
+    com.centinela: INFO
+    centinela.local.eventgrid: INFO
+    centinela.pipeline: INFO

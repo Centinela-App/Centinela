@@ -17,6 +17,13 @@ import java.util.Optional;
  *
  * <p>Se activa si el monto de la transaccion actual excede significativamente
  * el promedio del historial de la cuenta (monto observado vs. promedio).
+ *
+ * <p><b>Que registra y por que.</b> La frase objetivo — "el monto de $4.200.000 supera en
+ * 84x el promedio historico de la cuenta ($50.000)" — necesita el multiplicador
+ * <i>observado</i>, no el configurado. El umbral de la regla puede ser 3x mientras lo
+ * observado es 84x: informar el primero como si fuera el segundo tergiversa el hallazgo.
+ * Tambien se registra el tamano de la muestra, porque un promedio calculado sobre dos
+ * transacciones no merece la misma confianza que uno sobre cincuenta.
  */
 public final class AtypicalAmountRule implements ScoringRule {
 
@@ -66,15 +73,35 @@ public final class AtypicalAmountRule implements ScoringRule {
 
         BigDecimal thresholdAmount = average.multiply(BigDecimal.valueOf(multiplierThreshold));
 
-        if (transaction.amount().compareTo(thresholdAmount) > 0) {
-            Map<String, Object> observedValues = new LinkedHashMap<>();
-            observedValues.put("currentAmount", transaction.amount().doubleValue());
-            observedValues.put("averageAmount", average.doubleValue());
-            observedValues.put("multiplierThreshold", multiplierThreshold);
-
-            return Optional.of(new RuleHit(ruleId, ruleName, points, observedValues));
+        if (transaction.amount().compareTo(thresholdAmount) <= 0) {
+            return Optional.empty();
         }
 
-        return Optional.empty();
+        Map<String, Object> observedValues = new LinkedHashMap<>();
+        observedValues.put("currentAmount", transaction.amount().doubleValue());
+        observedValues.put("averageAmount", average.doubleValue());
+        observedValues.put("multiplierThreshold", multiplierThreshold);
+        observedValues.put("historySampleSize", validAmounts.size());
+
+        observedMultiplier(transaction.amount(), average)
+                .ifPresent(observed -> observedValues.put("observedMultiplier", observed));
+        if (transaction.currency() != null && !transaction.currency().isBlank()) {
+            observedValues.put("currency", transaction.currency());
+        }
+
+        return Optional.of(new RuleHit(ruleId, ruleName, points, observedValues));
+    }
+
+    /**
+     * Cuantas veces el monto actual supera al promedio.
+     *
+     * @return vacio si el promedio es cero — la division seria indefinida y "infinitas
+     *         veces el promedio" no es una afirmacion que el explicador deba emitir
+     */
+    private static Optional<Double> observedMultiplier(BigDecimal currentAmount, BigDecimal average) {
+        if (average.compareTo(BigDecimal.ZERO) == 0) {
+            return Optional.empty();
+        }
+        return Optional.of(currentAmount.divide(average, 2, RoundingMode.HALF_UP).doubleValue());
     }
 }

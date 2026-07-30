@@ -49,11 +49,17 @@ public class TransactionIngestionConfiguration {
     @Bean
     @Profile("!test")
     BlobContainerClient rawTransactionBlobContainerClient(RawTransactionBlobProperties properties) {
-        return new BlobServiceClientBuilder()
-                .endpoint(properties.endpoint())
-                .credential(new DefaultAzureCredentialBuilder().build())
-                .buildClient()
-                .getBlobContainerClient(properties.containerName());
+        // Dos caminos y solo dos: Azurite por cadena de conexion (perfil local) o Azure
+        // por Managed Identity. No hay tercer camino con credenciales reales en
+        // configuracion, y la bifurcacion explicita lo hace auditable de un vistazo.
+        BlobServiceClientBuilder builder = new BlobServiceClientBuilder();
+        if (properties.usesConnectionString()) {
+            builder.connectionString(properties.connectionString());
+        } else {
+            builder.endpoint(properties.endpoint())
+                    .credential(new DefaultAzureCredentialBuilder().build());
+        }
+        return builder.buildClient().getBlobContainerClient(properties.containerName());
     }
 
     @Bean
@@ -81,7 +87,7 @@ public class TransactionIngestionConfiguration {
     }
 
     @Bean
-    @Profile("!test")
+    @Profile("!test & !local")
     EventGridPublisherClient<EventGridEvent> transactionEventGridClient(
             @Value("${centinela.messaging.eventgrid.topic-endpoint}") String topicEndpoint) {
         return new EventGridPublisherClientBuilder()
@@ -91,13 +97,35 @@ public class TransactionIngestionConfiguration {
     }
 
     @Bean
-    @Profile("!test")
+    @Profile("!test & !local")
     TransactionEventPublisherPort transactionEventPublisherPort(
             EventGridPublisherClient<EventGridEvent> transactionEventGridClient,
             RawTransactionBlobProperties properties) {
         return new EventGridTransactionEventPublisher(
                 transactionEventGridClient,
                 properties.containerName());
+    }
+
+    /**
+     * Publicador del perfil {@code local}: registra el evento en el log en lugar de
+     * publicarlo, porque <b>no existe emulador local de Event Grid</b>. El salto
+     * API&nbsp;&rarr;&nbsp;motor se cubre en local con
+     * {@code scripts/local/simulate-scoring.sh}, que hace lo que el motor haria:
+     * escribe el registro de scoring y encola el caso.
+     *
+     * <p>Es un log-and-continue y no un no-op silencioso a proposito: quien mire el log
+     * local debe ver que el evento existio y que su continuacion es manual. Un no-op
+     * mudo haria creer que el pipeline completo funciona en local, y no es verdad.
+     */
+    @Bean
+    @Profile("local")
+    TransactionEventPublisherPort localLoggingEventPublisher() {
+        org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger("centinela.local.eventgrid");
+        return (transaction, receivedAt) -> log.info(
+                "LOCAL: transaction-event-v1 NO publicado (sin Event Grid local). "
+                        + "transactionId={} accountId={}. Para continuar el flujo: "
+                        + "scripts/local/simulate-scoring.sh {}",
+                transaction.transactionId(), transaction.accountId(), transaction.transactionId());
     }
 
     /**

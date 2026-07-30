@@ -4,6 +4,7 @@ import com.azure.core.util.BinaryData;
 import com.azure.messaging.eventgrid.EventGridEvent;
 import com.azure.messaging.eventgrid.EventGridPublisherClient;
 import com.centinela.shared.event.TransactionEvent;
+import com.centinela.shared.trace.TraceContextHolder;
 import com.centinela.transactioningestion.application.port.out.TransactionEventPublisherPort;
 import com.centinela.transactioningestion.domain.model.Transaction;
 
@@ -50,12 +51,16 @@ public final class EventGridTransactionEventPublisher implements TransactionEven
         Objects.requireNonNull(transaction, "transaction is required");
         Objects.requireNonNull(receivedAt, "receivedAt is required");
 
+        // El contexto lo fija TracePropagationFilter al entrar la peticion. Si el evento
+        // se publicara fuera de una peticion HTTP, se abre una traza nueva en vez de
+        // emitir un contrato invalido.
         TransactionEvent payload = new TransactionEvent(
                 UUID.randomUUID().toString(),
                 transaction.transactionId(),
                 transaction.accountId(),
                 transaction.occurredAt(),
                 blobPath(transaction.transactionId(), receivedAt),
+                TraceContextHolder.currentTraceparentOrNew(),
                 TransactionEvent.SCHEMA_VERSION);
 
         EventGridEvent event = new EventGridEvent(

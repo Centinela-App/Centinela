@@ -11,6 +11,7 @@
     "accountId",
     "occurredAt",
     "blobPath",
+    "traceparent",
     "schemaVersion"
   ],
   "properties": {
@@ -38,6 +39,11 @@
       "type": "string",
       "minLength": 1,
       "description": "Ubicacion del JSON crudo en Blob Storage (contenedor/ruta 'yyyy/MM/dd/{transactionId}.json'). La Function lo lee para puntuar."
+    },
+    "traceparent": {
+      "type": "string",
+      "pattern": "^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$",
+      "description": "Contexto de traza distribuida W3C heredado de la peticion HTTP de ingesta. El evento cruza un limite de proceso, asi que el contexto no puede viajar en memoria: se serializa aqui. Es lo que permite reconstruir el recorrido completo de UNA transaccion, con tiempos por etapa, en lugar de solo metricas agregadas."
     },
     "schemaVersion": {
       "type": "string",

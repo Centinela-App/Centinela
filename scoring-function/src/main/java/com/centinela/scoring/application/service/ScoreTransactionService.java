@@ -6,6 +6,7 @@ import com.centinela.scoring.application.port.out.ScorePersistencePort;
 import com.centinela.scoring.domain.model.HistoricalTransaction;
 import com.centinela.scoring.domain.model.RuleHit;
 import com.centinela.scoring.domain.model.Score;
+import com.centinela.scoring.domain.model.TraceContext;
 import com.centinela.scoring.domain.model.TransactionEvent;
 import com.centinela.scoring.domain.rule.AtypicalAmountRule;
 import com.centinela.scoring.domain.rule.GeoImpossibleRule;
@@ -62,11 +63,33 @@ public final class ScoreTransactionService {
         return executeScoring(transaction, history);
     }
 
+    /**
+     * Puntua sin contexto de traza entrante: abre una traza nueva.
+     *
+     * <p>Solo deberia ocurrir en pruebas o si el evento llega sin {@code traceparent}. En
+     * el pipeline real el contexto viene del evento y debe conservarse.
+     */
     public Score executeScoring(TransactionEvent transaction, List<HistoricalTransaction> history) {
+        return executeScoring(transaction, history, TraceContext.newRootTraceparent());
+    }
+
+    /**
+     * Puntua la transaccion continuando la traza recibida.
+     *
+     * <p>El umbral se lee <b>una sola vez</b> y se guarda dentro del {@link Score}. Es
+     * configurable en caliente: leerlo dos veces — una para decidir y otra para explicar —
+     * abre la posibilidad de que un caso se abra con un umbral y se explique con otro.
+     */
+    public Score executeScoring(
+            TransactionEvent transaction,
+            List<HistoricalTransaction> history,
+            String traceparent) {
         Objects.requireNonNull(transaction, "transaction is required");
         List<HistoricalTransaction> safeHistory = history == null ? List.of() : List.copyOf(history);
 
         Instant scoredAt = clock.instant();
+        int threshold = thresholdProvider.getThreshold();
+
         List<RuleHit> triggeredRules = new ArrayList<>();
         int totalScore = 0;
         for (ScoringRule rule : rules) {
@@ -81,16 +104,16 @@ public final class ScoreTransactionService {
                 transaction.transactionId(),
                 transaction.accountId(),
                 totalScore,
+                threshold,
                 triggeredRules,
                 transaction.occurredAt(),
-                scoredAt);
+                scoredAt,
+                TraceContext.parseOrNewRoot(traceparent).toTraceparent());
 
         if (scorePersistencePort != null) {
             scorePersistencePort.persistScore(transaction, score);
         }
-        if (flaggedCasePublisherPort != null
-                && !score.triggeredRules().isEmpty()
-                && score.totalScore() >= thresholdProvider.getThreshold()) {
+        if (flaggedCasePublisherPort != null && score.isFlagged()) {
             flaggedCasePublisherPort.publishFlaggedCase(score);
         }
         return score;

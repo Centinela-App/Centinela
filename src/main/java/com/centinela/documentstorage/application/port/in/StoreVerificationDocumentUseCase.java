@@ -9,7 +9,19 @@ import com.centinela.documentstorage.application.command.StoreVerificationDocume
 public interface StoreVerificationDocumentUseCase {
 
     /**
-     * Almacena el documento y devuelve el identificador generado.
+     * Almacena el documento y devuelve su identificador y su ubicacion.
+     *
+     * <p>La ubicacion forma parte del acuse porque el flujo de verificacion documental
+     * necesita volver a leer el archivo mas tarde para extraer sus datos.
      */
-    String store(StoreVerificationDocumentCommand command);
+    StoredVerificationDocument store(StoreVerificationDocumentCommand command);
+
+    /**
+     * Acuse de la carga.
+     *
+     * @param documentId identificador generado
+     * @param blobPath   ruta dentro del contenedor de documentos
+     */
+    record StoredVerificationDocument(String documentId, String blobPath) {
+    }
 }

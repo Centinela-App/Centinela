@@ -52,25 +52,46 @@ public final class ScoreTransactionFunction {
     public void run(
             @EventGridTrigger(name = "event") String eventPayload,
             ExecutionContext context) {
+        long startedAtNanos = System.nanoTime();
         try {
             TransactionEventNotification notification = parseNotification(eventPayload);
             RuntimeDependencies dependencies = runtime();
             TransactionEvent transaction = dependencies.rawTransactionReader().read(notification);
 
             context.getLogger().info("transaction-event-v1 received accountId="
-                    + notification.accountId() + " transactionId=" + notification.transactionId());
+                    + notification.accountId() + " transactionId=" + notification.transactionId()
+                    + " traceId=" + traceIdOf(notification.traceparent()));
 
             List<HistoricalTransaction> history = dependencies.historyPort()
                     .recentHistory(notification.accountId(), notification.occurredAt());
-            Score score = dependencies.scoreServiceFor(notification).executeScoring(transaction, history);
+            Score score = dependencies.scoreServiceFor(notification)
+                    .executeScoring(transaction, history, notification.traceparent());
 
-            context.getLogger().info("scoring completed transactionId=" + score.transactionId()
+            // Misma forma clave-valor que StageTelemetry en el modulo principal, para que
+            // las consultas de operacion puedan unir las etapas de los dos procesos sin
+            // expresiones regulares distintas por componente.
+            context.getLogger().info("stage=SCORING"
+                    + " transactionId=" + score.transactionId()
+                    + " traceId=" + traceIdOf(score.traceparent())
+                    + " durationMs=" + (System.nanoTime() - startedAtNanos) / 1_000_000
+                    + " outcome=SUCCESS"
                     + " totalScore=" + score.totalScore()
+                    + " threshold=" + score.threshold()
+                    + " flagged=" + score.isFlagged()
                     + " triggeredRules=" + score.triggeredRules().size());
         } catch (Exception exception) {
-            context.getLogger().log(Level.SEVERE, "Failed to process transaction-event-v1", exception);
+            context.getLogger().log(Level.SEVERE, "stage=SCORING"
+                    + " durationMs=" + (System.nanoTime() - startedAtNanos) / 1_000_000
+                    + " outcome=FAILURE reason=\"" + exception.getMessage() + "\"", exception);
             throw new RuntimeException("Failed to process transaction-event-v1", exception);
         }
+    }
+
+    /** Extrae el {@code trace-id} del {@code traceparent} para correlacionar registros. */
+    private static String traceIdOf(String traceparent) {
+        return com.centinela.scoring.domain.model.TraceContext.parse(traceparent)
+                .map(com.centinela.scoring.domain.model.TraceContext::traceId)
+                .orElse("unknown");
     }
 
     private static TransactionEventNotification parseNotification(String eventPayload) throws Exception {

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -27,8 +28,11 @@ import java.util.List;
  * entorno no secretas (ver {@code application.yml}); nunca se versionan
  * valores concretos de un tenant.
  */
+// Fuera del perfil 'local': alli rige LocalSecurityConfiguration, que documenta por
+// que y bajo que salvaguardas se apaga la autenticacion en el entorno de desarrollo.
 @Configuration
 @EnableWebSecurity
+@Profile("!local")
 public class SecurityConfiguration {
 
     private final String issuerUri;
@@ -58,6 +62,13 @@ public class SecurityConfiguration {
                         .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/transactions").hasRole("SERVICE")
                         .requestMatchers(HttpMethod.POST, "/api/v1/verification-documents").hasRole("ANALYST")
+                        // Consulta de resultados: la usa el analista para revisar un caso y
+                        // el originador para conocer el veredicto de la transaccion que
+                        // envio. Ambos roles leen; ninguno escribe por esta via.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/transactions/*/analysis")
+                        .hasAnyRole("ANALYST", "SERVICE")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/cases/*")
+                        .hasAnyRole("ANALYST", "SERVICE")
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptionHandling -> exceptionHandling
                         .authenticationEntryPoint(restAuthenticationEntryPoint)

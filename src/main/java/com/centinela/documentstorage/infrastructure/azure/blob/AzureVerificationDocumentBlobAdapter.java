@@ -26,18 +26,20 @@ public final class AzureVerificationDocumentBlobAdapter implements VerificationD
     }
 
     @Override
-    public void store(VerificationDocument document, Instant receivedAt) {
+    public String store(VerificationDocument document, Instant receivedAt) {
         Objects.requireNonNull(document, "document is required");
         Objects.requireNonNull(receivedAt, "receivedAt is required");
 
+        String blobPath = createBlobPath(receivedAt, document);
         try {
-            containerClient.getBlobClient(createBlobPath(receivedAt, document))
+            containerClient.getBlobClient(blobPath)
                     .upload(BinaryData.fromBytes(document.content()), true);
         } catch (RuntimeException exception) {
             throw new DocumentStorageUnavailableException(
                     "Verification document storage is unavailable",
                     exception);
         }
+        return blobPath;
     }
 
     static String createBlobPath(Instant receivedAt, VerificationDocument document) {

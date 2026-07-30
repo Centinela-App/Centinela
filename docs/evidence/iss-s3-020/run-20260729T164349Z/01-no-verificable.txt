@@ -1,0 +1,8 @@
+# Evidencia NO capturada en esta corrida
+#
+# Motivo: Requiere consultar Cost Management
+#
+# Esta issue esta implementada, pero su criterio de aceptacion exige
+# ejecutar contra un recurso que no esta disponible en este entorno.
+# Declararlo es mas util que dejar una carpeta vacia que parezca
+# evidencia.

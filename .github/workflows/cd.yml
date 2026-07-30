@@ -1,0 +1,214 @@
+# =============================================================================
+# Despliegue continuo — de la rama principal al sistema en ejecucion, sin manos.
+#
+# Etapas, en el orden que exige el enunciado:
+#   1. Construccion de la aplicacion
+#   2. Ejecucion de las pruebas      <- un fallo detiene aqui; no se construye imagen
+#   3. Construccion de las imagenes de contenedor
+#   4. Publicacion en el registro privado
+#   5. Despliegue
+#
+# ---------------------------------------------------------------------------
+# CREDENCIALES: NO HAY NINGUNA
+# ---------------------------------------------------------------------------
+# La autenticacion usa OpenID Connect. GitHub emite un token de identidad de
+# vida corta (minutos) que Azure valida contra una credencial federada acotada a
+# ESTE repositorio y ESTA rama. En el repositorio no hay contrasenas, ni
+# certificados, ni un JSON de service principal: los tres valores configurados
+# —client id, tenant id, subscription id— son identificadores, no secretos, y no
+# sirven de nada sin un token firmado por GitHub para este repositorio.
+#
+# Es la diferencia entre "el secreto esta bien guardado" y "no hay secreto que
+# robar". Una credencial de service principal filtrada vale hasta que alguien la
+# rote; un token OIDC filtrado caduco antes de que termine de leerse.
+# =============================================================================
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      etiqueta:
+        description: 'Etiqueta de imagen a desplegar (por defecto, el SHA del commit)'
+        required: false
+
+permissions:
+  contents: read
+  # Necesario para que GitHub emita el token OIDC.
+  id-token: write
+
+concurrency:
+  # Nunca dos despliegues simultaneos sobre el mismo entorno. Sin cancelacion:
+  # abortar un despliegue a la mitad deja el entorno en estado desconocido.
+  group: cd-produccion
+  cancel-in-progress: false
+
+env:
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  NAME_PREFIX: ${{ vars.NAME_PREFIX }}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Etapas 1 y 2. Reutiliza el mismo flujo de CI para que no existan dos
+  # definiciones de "las pruebas pasan" que puedan divergir.
+  # ---------------------------------------------------------------------------
+  verificar:
+    name: Construccion y pruebas
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  # ---------------------------------------------------------------------------
+  # Etapas 3 y 4.
+  #
+  # INTERRUPTOR DE DESPLIEGUE. Estas etapas tocan Azure y por tanto necesitan los
+  # secrets de OIDC registrados en el repositorio. Se activan solo cuando la
+  # variable de repositorio AZURE_DEPLOY_ENABLED vale 'true'.
+  #
+  # Por que un interruptor y no siempre: si estas etapas corrieran sin los secrets
+  # —el estado de un repo recien clonado o antes de configurar OIDC— fallarian
+  # DESPUES de un merge exitoso, ensuciando el historial de main con una corrida
+  # roja que no indica ningun problema del codigo. Con el interruptor, un merge
+  # sin configurar despliegue ejecuta CI y se detiene limpio; en cuanto se
+  # registran los secrets y se pone AZURE_DEPLOY_ENABLED=true, el MISMO push
+  # despliega automaticamente. El cableado del entregable 1 esta intacto; solo
+  # espera su configuracion de una vez.
+  #
+  # El disparo manual (workflow_dispatch) ignora el interruptor a proposito: sirve
+  # para el primer despliegue controlado, cuando se quiere ver correr el flujo una
+  # vez antes de dejarlo automatico.
+  # ---------------------------------------------------------------------------
+  publicar-imagenes:
+    name: Construir y publicar imagenes
+    needs: verificar
+    if: ${{ vars.AZURE_DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+
+    outputs:
+      etiqueta: ${{ steps.etiqueta.outputs.valor }}
+
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v4
+
+      - name: Determinar la etiqueta de imagen
+        id: etiqueta
+        # El SHA del commit como etiqueta hace que cada imagen sea rastreable
+        # hasta el codigo exacto que la produjo. 'latest' se mueve y no permite
+        # responder "que hay desplegado ahora mismo".
+        run: echo "valor=${{ inputs.etiqueta || github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Autenticarse en Azure con OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Autenticarse en el registro
+        # Token de acceso de vida corta emitido por Azure AD. El usuario
+        # administrador del registro esta deshabilitado a proposito.
+        run: az acr login --name "${NAME_PREFIX}acr"
+
+      - name: Preparar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Construir y publicar la imagen de la aplicacion
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ vars.NAME_PREFIX }}acr.azurecr.io/centinela-api:${{ steps.etiqueta.outputs.valor }}
+            ${{ vars.NAME_PREFIX }}acr.azurecr.io/centinela-api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # NINGUN build-arg con secretos. Un ARG queda grabado en la capa y es
+          # recuperable con 'docker history'.
+          provenance: false
+
+      - name: Construir y publicar la imagen del motor de scoring
+        uses: docker/build-push-action@v6
+        with:
+          context: ./scoring-function
+          file: ./scoring-function/Dockerfile
+          push: true
+          tags: |
+            ${{ vars.NAME_PREFIX }}acr.azurecr.io/centinela-scoring:${{ steps.etiqueta.outputs.valor }}
+            ${{ vars.NAME_PREFIX }}acr.azurecr.io/centinela-scoring:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Verificar que las imagenes no contienen secretos
+        # Se inspecciona la imagen construida, capa por capa, antes de que llegue
+        # a ejecutarse. Encontrar aqui una credencial horneada cuesta un
+        # despliegue; encontrarla despues cuesta rotar todo.
+        run: bash scripts/verify/verify-image-secrets.sh "${{ vars.NAME_PREFIX }}acr.azurecr.io/centinela-api:${{ steps.etiqueta.outputs.valor }}"
+
+      - name: Registrar el tamano de las imagenes
+        run: bash scripts/verify/report-image-size.sh "${{ vars.NAME_PREFIX }}acr.azurecr.io" "${{ steps.etiqueta.outputs.valor }}"
+
+  # ---------------------------------------------------------------------------
+  # Etapa 5.
+  # ---------------------------------------------------------------------------
+  desplegar:
+    name: Desplegar en Container Apps
+    needs: publicar-imagenes
+    # Explicito por legibilidad: un job cuyo 'needs' se salto ya se saltaria solo,
+    # pero dejar la condicion aqui hace evidente al leer el archivo que este job
+    # tambien esta detras del interruptor.
+    if: ${{ vars.AZURE_DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: produccion
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v4
+
+      - name: Autenticarse en Azure con OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Desplegar las tres aplicaciones
+        env:
+          SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          NAME_PREFIX: ${{ vars.NAME_PREFIX }}
+          LOCATION: ${{ vars.AZURE_LOCATION }}
+          APP_SERVICE_SKU: ${{ vars.APP_SERVICE_SKU }}
+          IMAGE_TAG: ${{ needs.publicar-imagenes.outputs.etiqueta }}
+        run: bash scripts/deploy-containers.sh --tag "$IMAGE_TAG"
+
+      - name: Verificar que el sistema responde
+        # El despliegue no termina cuando 'az' devuelve cero, sino cuando la
+        # aplicacion contesta. Sin esta comprobacion, un contenedor que arranca y
+        # muere en bucle se reporta como despliegue exitoso.
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          NAME_PREFIX: ${{ vars.NAME_PREFIX }}
+        run: bash scripts/verify/verify-deployment-health.sh
+
+      - name: Resumen del despliegue
+        if: always()
+        run: |
+          {
+            echo "### Despliegue"
+            echo ""
+            echo "- Commit: \`${{ github.sha }}\`"
+            echo "- Etiqueta: \`${{ needs.publicar-imagenes.outputs.etiqueta }}\`"
+            echo "- Resultado: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"

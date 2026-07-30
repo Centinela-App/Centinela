@@ -10,6 +10,7 @@ public record TransactionEventNotification(
         String accountId,
         OffsetDateTime occurredAt,
         String blobPath,
+        String traceparent,
         String schemaVersion) {
 
     public static final String SCHEMA_VERSION = "transaction-event-v1";
@@ -26,5 +27,10 @@ public record TransactionEventNotification(
         if (occurredAt == null) throw new IllegalArgumentException("occurredAt is required");
         if (blobPath == null || blobPath.isBlank()) throw new IllegalArgumentException("blobPath is required");
         if (!SCHEMA_VERSION.equals(schemaVersion)) throw new IllegalArgumentException("Unsupported schemaVersion: " + schemaVersion);
+
+        // Un traceparent ausente o corrupto degrada la correlacion, no la deteccion: se
+        // abre una traza nueva y la transaccion se puntua igual. Rechazar el evento por
+        // un defecto de telemetria seria subordinar el negocio al instrumento.
+        traceparent = TraceContext.parseOrNewRoot(traceparent).toTraceparent();
     }
 }

@@ -35,11 +35,19 @@ public final class OpenCaseService implements OpenCaseUseCase {
 
     private Case_ createNewCase(FlaggedCaseMessage message) {
         OffsetDateTime now = OffsetDateTime.now(clock);
+
+        // El caso nace SIN explicacion y lo declara explicitamente. La explicacion la
+        // produce despues un componente independiente: si estuviera caido, este metodo no
+        // debe notarlo siquiera.
         Case_ newCase = new Case_(
                 null,
                 message.transactionId(),
+                message.accountId(),
                 BigDecimal.valueOf(message.score()),
                 Case_.CaseStatus.NEW,
+                message.traceparent(),
+                Case_.ExplanationState.PENDING,
+                null,
                 now,
                 now);
 
@@ -49,6 +57,7 @@ public final class OpenCaseService implements OpenCaseUseCase {
         String details = "accountId=" + message.accountId()
                 + "; occurredAt=" + message.occurredAt()
                 + "; scoredAt=" + message.scoredAt()
+                + "; traceparent=" + message.traceparent()
                 + "; triggeredRules=" + rules;
 
         CaseAuditEntry auditEntry = new CaseAuditEntry(

@@ -197,15 +197,24 @@ ensure_collection() {
   #   expiracion automatica se declara como INDICE TTL sobre '_ts', que es el
   #   mecanismo nativo de Cosmos DB for MongoDB. Se incluye tambien el indice
   #   obligatorio de '_id'.
+  #
+  # INDICES DE CONSULTA — no opcionales. Cosmos Mongo exige un indice para todo
+  # campo de ORDER BY: sin el de 'occurredAt', la consulta dominante del motor
+  # ("historial reciente de la cuenta, descendente") falla en tiempo de
+  # ejecucion con "The index path corresponding to the specified order-by item
+  # is excluded". Este defecto estuvo latente: la version anterior de este
+  # script solo creaba _id y _ts, y el motor moria en su PRIMERA consulta real.
+  # El compuesto (accountId, occurredAt) sirve el filtro por shard + orden en
+  # una sola pasada; el de transactionId sirve al explicador y a la consulta.
   local idx
-  idx="$(printf '[{"key":{"keys":["_id"]}},{"key":{"keys":["_ts"]},"options":{"expireAfterSeconds":%s}}]' "$TTL_SECONDS")"
+  idx="$(printf '[{"key":{"keys":["_id"]}},{"key":{"keys":["accountId"]}},{"key":{"keys":["occurredAt"]}},{"key":{"keys":["accountId","occurredAt"]}},{"key":{"keys":["transactionId"]}},{"key":{"keys":["_ts"]},"options":{"expireAfterSeconds":%s}}]' "$TTL_SECONDS")"
   with_retry 3 az cosmosdb mongodb collection create \
     --account-name "$account" --resource-group "$rg" \
     --database-name "$DATABASE_NAME" --name "$COLLECTION_NAME" \
     --shard "$SHARD_KEY" \
     --idx "$idx" \
     --output none
-  log_info "Coleccion creada."
+  log_info "Coleccion creada con indices de consulta."
 }
 
 verify_all_resources() {
