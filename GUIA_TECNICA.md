@@ -102,7 +102,7 @@ Los interruptores que definen el papel (todos nacen apagados):
    motor lee el blob crudo, consulta el historial de la cuenta en Cosmos DB
    (API MongoDB), ejecuta las cuatro reglas y persiste la decisión (puntaje,
    umbral vigente, reglas activadas) en Cosmos de forma idempotente.
-3. Si el puntaje supera el umbral (`SCORING_THRESHOLD`, por defecto 50), el
+3. Si el puntaje alcanza el umbral (`SCORING_THRESHOLD`, por defecto 25), el
    motor encola un mensaje `flagged-case-v1` en la Storage Queue
    `flagged-cases-production`.
 4. El consumidor de la cola (dentro de `ca-cent-api`) abre el caso en
@@ -224,7 +224,12 @@ cliente compare, porque el umbral puede cambiar después.
 
 **Umbral en caliente.** `SCORING_THRESHOLD`, `RISKY_MERCHANTS` y
 `RISKY_CATEGORIES` se releen del entorno sin redesplegar. El valor por defecto
-es **50** en el código, el emulador y el script de despliegue.
+es **25** en el código, el emulador y el script de despliegue: el puntaje de la
+regla más débil (atypical-amount = 25; velocity = 30; risky-merchant = 35;
+geo-impossible = 40), porque la promesa verificada por el banco de pruebas es
+que cada causal por sí sola abre un caso. Se descubrió en despliegue real: con
+el antiguo umbral de 50, los cuatro escenarios de una sola regla terminaban en
+"NO MARCADA".
 
 **Idempotencia.** El motor persiste la decisión con la transacción como clave;
 reintentos de Event Grid no duplican. La apertura de casos usa

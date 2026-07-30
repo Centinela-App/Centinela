@@ -8,7 +8,7 @@
     "COSMOS_COLLECTION": "transactions",
     "STORAGE_QUEUE_CONNECTION_STRING": "UseDevelopmentStorage=true",
     "FLAGGED_CASES_QUEUE": "flagged-cases",
-    "SCORING_THRESHOLD": "50",
+    "SCORING_THRESHOLD": "25",
     "EVENT_GRID_TOPIC": "transaction-events"
   }
 }

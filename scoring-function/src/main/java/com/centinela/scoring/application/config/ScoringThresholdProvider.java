@@ -17,7 +17,16 @@ public class ScoringThresholdProvider {
     public static final String SCORING_THRESHOLD_ENV = "SCORING_THRESHOLD";
     public static final String RISKY_MERCHANTS_ENV = "RISKY_MERCHANTS";
     public static final String RISKY_CATEGORIES_ENV = "RISKY_CATEGORIES";
-    public static final int DEFAULT_THRESHOLD = 50;
+    /**
+     * El umbral por defecto es 25: el puntaje de la regla mas debil
+     * (atypical-amount). La promesa del producto — verificada por el banco de
+     * pruebas — es que CADA causal por si sola abre un caso; con un umbral por
+     * encima de 25, un monto atipico aislado (25), una rafaga de velocidad (30)
+     * o un comercio riesgoso (35) puntuarian sin marcar jamas. Se descubrio en
+     * despliegue real: con el antiguo 50, los cuatro escenarios de una sola
+     * regla del banco de pruebas terminaban en "NO MARCADA".
+     */
+    public static final int DEFAULT_THRESHOLD = 25;
 
     private final Supplier<Integer> thresholdSupplier;
     private final Supplier<Set<String>> riskyMerchantsSupplier;
