@@ -314,7 +314,7 @@ main() {
   [ "$active_sub" = "$SUBSCRIPTION_ID" ] \
     || die "Suscripcion activa ($(mask "$active_sub")) != SUBSCRIPTION_ID ($(mask "$SUBSCRIPTION_ID"))."
   az group show --name "$RESOURCE_GROUP" >/dev/null 2>&1 \
-    || die "Resource Group '$RESOURCE_GROUP' no existe. Ejecuta primero deploy-week1.sh."
+    || die "Resource Group '$RESOURCE_GROUP' no existe. Ejecuta primero deploy-platform.sh."
 
   local sa_name app_name topic_name sa_id topic_id
   sa_name="$(compute_storage_account_name "$NAME_PREFIX" "$SUBSCRIPTION_ID" "$RESOURCE_GROUP")"

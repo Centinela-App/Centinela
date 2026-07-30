@@ -1,8 +1,0 @@
-# Evidencia NO capturada en esta corrida
-#
-# Motivo: La Container App de la API no existe: no hay replicas que observar. Requiere el pipeline completo (semanas 1 y 2) desplegado
-#
-# Esta issue esta implementada, pero su criterio de aceptacion exige
-# ejecutar contra un recurso que no esta disponible en este entorno.
-# Declararlo es mas util que dejar una carpeta vacia que parezca
-# evidencia.

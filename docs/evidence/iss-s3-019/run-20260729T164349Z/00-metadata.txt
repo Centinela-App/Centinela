@@ -1,6 +1,0 @@
-issue      : iss-s3-019
-commit     : 105673a2cd1278c7e259860a4a4a3ebc147bbca8
-rama       : semana-3-despliegue-explicabilidad-observabilidad
-instante   : 20260729T164349Z (UTC)
-java       : openjdk version "21.0.10" 2026-01-20 LTS
-maven      : Apache Maven 3.9.14 (996c630dbc656c76214ce58821dcc58be960875b)

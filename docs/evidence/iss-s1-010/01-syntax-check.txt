@@ -1,5 +1,0 @@
-# TEST-S1-020 — verificación de sintaxis local (bash -n)
-# Fecha: 2026-07-21T14:17:05Z
-
-OK  scripts/validate-queue.sh
-OK  scripts/tests/test-queue-roundtrip.sh

@@ -272,7 +272,7 @@ main() {
     || die "Suscripcion activa ($(mask "$active_sub")) != SUBSCRIPTION_ID ($(mask "$SUBSCRIPTION_ID"))."
 
   az group show --name "$RESOURCE_GROUP" >/dev/null 2>&1 \
-    || die "Resource Group '$RESOURCE_GROUP' no existe. Ejecuta primero deploy-week1.sh."
+    || die "Resource Group '$RESOURCE_GROUP' no existe. Ejecuta primero deploy-platform.sh."
 
   local account vnet
   account="$(compute_cosmos_account_name "$NAME_PREFIX" "$SUBSCRIPTION_ID" "$RESOURCE_GROUP")"
@@ -281,7 +281,7 @@ main() {
 
   az network vnet subnet show --vnet-name "$vnet" --resource-group "$RESOURCE_GROUP" \
       --name "$SUBNET_PE" >/dev/null 2>&1 \
-    || die "No existe '$vnet/$SUBNET_PE'. Ejecuta primero scripts/provision-network.sh."
+    || die "No existe '$vnet/$SUBNET_PE'. Ejecuta primero scripts/provision-network-containerapps.sh."
 
   log_info "Cuenta Cosmos objetivo: $account (longitud: ${#account})"
   log_info "Base / Coleccion:       $DATABASE_NAME / $COLLECTION_NAME"

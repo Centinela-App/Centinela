@@ -286,7 +286,7 @@ main() {
   [ "$active_sub" = "$SUBSCRIPTION_ID" ] \
     || die "Suscripcion activa ($(mask "$active_sub")) != SUBSCRIPTION_ID ($(mask "$SUBSCRIPTION_ID"))."
   az group show --name "$RESOURCE_GROUP" >/dev/null 2>&1 \
-    || die "Resource Group '$RESOURCE_GROUP' no existe. Ejecuta primero deploy-week1.sh."
+    || die "Resource Group '$RESOURCE_GROUP' no existe. Ejecuta primero deploy-platform.sh."
 
   local vault cosmos app vault_id
   vault="$(compute_keyvault_name "$NAME_PREFIX" "$SUBSCRIPTION_ID" "$RESOURCE_GROUP")"

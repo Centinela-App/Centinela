@@ -1,0 +1,384 @@
+openapi: 3.0.3
+
+info:
+  title: Centinela API
+  version: 2.0.0
+  description: >
+    API publica de Centinela: ingesta de transacciones, carga de documentos de
+    verificacion y consulta de analisis y casos. Los tests de contrato
+    (OpenApiContractTest, VerificationDocumentOpenApiContractTest) verifican que
+    los esquemas de este documento coinciden exactamente con los records Java.
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://{host}
+    variables:
+      host:
+        default: centinela.example.com
+
+paths:
+  /api/v1/transactions:
+    post:
+      summary: Recibir y almacenar una transacción cruda
+      operationId: ingestTransaction
+      description: Requiere el app role SERVICE. Responde 202 antes de cualquier análisis.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionRequest'
+      responses:
+        '202':
+          description: Transacción recibida y almacenada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionReceipt'
+        '400':
+          description: Payload inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: No autenticado
+        '403':
+          description: Rol no autorizado
+        '429':
+          description: Límite de tasa excedido
+        '503':
+          description: Storage no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/verification-documents:
+    post:
+      summary: Cargar un documento de verificación
+      operationId: uploadVerificationDocument
+      description: Requiere el app role ANALYST.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: transactionId
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Documento almacenado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentReceipt'
+        '400':
+          description: Archivo ausente o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: No autenticado
+        '403':
+          description: Rol no autorizado
+        '503':
+          description: Storage no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/transactions/{transactionId}/analysis:
+    get:
+      summary: Consultar el resultado del análisis de una transacción
+      operationId: getTransactionAnalysis
+      description: >
+        Requiere el app role ANALYST o SERVICE. Devuelve el registro que el motor
+        de scoring dejó en Cosmos: puntaje, umbral vigente en el momento de la
+        decisión y reglas activadas. 404 mientras el motor no haya puntuado.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        '200':
+          description: Análisis disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionAnalysisResponse'
+        '401':
+          description: No autenticado
+        '403':
+          description: Rol no autorizado
+        '404':
+          description: Transacción aún no puntuada o inexistente
+
+  /api/v1/cases/{transactionId}:
+    get:
+      summary: Consultar el caso de fraude abierto por una transacción
+      operationId: getCase
+      description: >
+        Requiere el app role ANALYST o SERVICE. 404 si la transacción no generó
+        caso (no fue marcada) o aún no fue consumida de la cola.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        '200':
+          description: Caso encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseResponse'
+        '401':
+          description: No autenticado
+        '403':
+          description: Rol no autorizado
+        '404':
+          description: La transacción no tiene caso
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    TransactionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - transactionId
+        - accountId
+        - amount
+        - currency
+        - occurredAt
+        - location
+        - merchant
+      properties:
+        transactionId:
+          type: string
+          minLength: 1
+        accountId:
+          type: string
+          minLength: 1
+        amount:
+          type: number
+          format: double
+          minimum: 0
+          exclusiveMinimum: true
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        occurredAt:
+          type: string
+          format: date-time
+        location:
+          $ref: '#/components/schemas/Location'
+        merchant:
+          $ref: '#/components/schemas/Merchant'
+
+    Location:
+      type: object
+      additionalProperties: false
+      required: [countryCode, city]
+      properties:
+        countryCode:
+          type: string
+          minLength: 2
+          maxLength: 2
+        city:
+          type: string
+          minLength: 1
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+
+    Merchant:
+      type: object
+      additionalProperties: false
+      required: [name, category]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        category:
+          type: string
+          minLength: 1
+
+    TransactionReceipt:
+      type: object
+      additionalProperties: false
+      required: [transactionId, status]
+      properties:
+        transactionId:
+          type: string
+        status:
+          type: string
+          enum: [RECEIVED]
+
+    DocumentReceipt:
+      type: object
+      additionalProperties: false
+      required: [documentId, status]
+      properties:
+        documentId:
+          type: string
+          minLength: 1
+        status:
+          type: string
+          enum: [STORED]
+
+    TransactionAnalysisResponse:
+      type: object
+      additionalProperties: false
+      required: [transactionId, accountId, score, threshold, flagged, triggeredRules]
+      properties:
+        transactionId:
+          type: string
+        accountId:
+          type: string
+        score:
+          type: integer
+        threshold:
+          type: integer
+        flagged:
+          type: boolean
+        traceparent:
+          type: string
+        triggeredRules:
+          type: array
+          items:
+            $ref: '#/components/schemas/TriggeredRule'
+
+    TriggeredRule:
+      type: object
+      additionalProperties: false
+      required: [ruleId, ruleName, points]
+      properties:
+        ruleId:
+          type: string
+        ruleName:
+          type: string
+        points:
+          type: integer
+        observedValues:
+          type: object
+          additionalProperties: true
+
+    CaseResponse:
+      type: object
+      additionalProperties: false
+      required: [caseId, transactionId, accountId, score, status]
+      properties:
+        caseId:
+          type: integer
+          format: int64
+        transactionId:
+          type: string
+        accountId:
+          type: string
+        score:
+          type: number
+        status:
+          type: string
+        explanationState:
+          type: string
+        explanation:
+          type: string
+        traceparent:
+          type: string
+        openedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        verificationDocuments:
+          type: array
+          items:
+            $ref: '#/components/schemas/VerificationDocument'
+
+    VerificationDocument:
+      type: object
+      additionalProperties: false
+      required: [documentId, state]
+      properties:
+        documentId:
+          type: integer
+          format: int64
+        state:
+          type: string
+        contentType:
+          type: string
+        fullName:
+          type: string
+        documentNumber:
+          type: string
+        birthDate:
+          type: string
+          format: date
+        expiryDate:
+          type: string
+          format: date
+        extractionEngine:
+          type: string
+        failureReason:
+          type: string
+        receivedAt:
+          type: string
+          format: date-time
+        processedAt:
+          type: string
+          format: date-time
+        analystNotifiedAt:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string

@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class EventContractTest {
 
     private static final Path SCHEMAS =
-            Path.of("docs", "1_Requisitos_y_Contrato", "schemas");
+            Path.of("docs", "contracts", "schemas");
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Test

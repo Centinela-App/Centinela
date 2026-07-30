@@ -1,9 +1,0 @@
-# traceparent declarado y obligatorio en los dos contratos
-# comando: grep -n traceparent docs/1_Requisitos_y_Contrato/schemas/transaction-event-v1.json docs/1_Requisitos_y_Contrato/schemas/flagged-case-v1.json
-# ------------------------------------------------------------------
-docs/1_Requisitos_y_Contrato/schemas/transaction-event-v1.json:14:    "traceparent",
-docs/1_Requisitos_y_Contrato/schemas/transaction-event-v1.json:43:    "traceparent": {
-docs/1_Requisitos_y_Contrato/schemas/flagged-case-v1.json:15:    "traceparent"
-docs/1_Requisitos_y_Contrato/schemas/flagged-case-v1.json:65:    "traceparent": {
-
-# RESULTADO: OK

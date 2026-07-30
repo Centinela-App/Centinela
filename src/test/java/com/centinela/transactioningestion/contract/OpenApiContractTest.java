@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class OpenApiContractTest {
 
     private static final Path OPEN_API = Path.of(
-            "docs", "1_Requisitos_y_Contrato", "openapi-centinela-semana1.yaml");
+            "docs", "contracts", "openapi-centinela.yaml");
 
     @Test
     void transactionEndpointConsumesOnlyJsonAndDocumentsExpectedResponses() throws IOException {

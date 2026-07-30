@@ -1,4 +1,0 @@
-$ mvn clean verify
-Tests run: 5, Failures: 0, Errors: 0 (ArchitectureConventionsTest)
-BUILD SUCCESS
-(reintegrado en develop: 2026-07-16)

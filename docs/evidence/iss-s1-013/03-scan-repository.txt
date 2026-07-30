@@ -1,2 +1,0 @@
-grep: input file './docs/evidence/iss-s1-013/03-scan-repository.txt' is also the output
-OK: no se detectaron secretos ni cadenas de conexion.

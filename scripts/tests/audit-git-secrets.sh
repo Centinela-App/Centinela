@@ -17,7 +17,7 @@
 #
 # Uso:
 #   scripts/tests/audit-git-secrets.sh
-#   REMEDIATION_DOC=docs/SECURITY-remediacion-env-leak.md scripts/tests/audit-git-secrets.sh
+#   REMEDIATION_DOC=GUIA_TECNICA.md scripts/tests/audit-git-secrets.sh
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,7 +27,7 @@ source "$SCRIPT_DIR/../lib/common.sh"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
-readonly REMEDIATION_DOC="${REMEDIATION_DOC:-docs/SECURITY-remediacion-env-leak.md}"
+readonly REMEDIATION_DOC="${REMEDIATION_DOC:-GUIA_TECNICA.md}"
 
 # Patrones de CREDENCIAL REAL (fallo duro). Los literales que dispararian el gate
 # scan-repository.sh se escriben con clase [=] para no auto-marcarse como secretos.

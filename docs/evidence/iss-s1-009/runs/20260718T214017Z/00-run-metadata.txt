@@ -1,8 +1,0 @@
-runId=20260718T214017Z
-timestampUtc=2026-07-18T21:40:17Z
-commit=f04a13ba20c29964b735edfa5522fdbff5cd5add
-branch=iss-s1-009-implementar-carga-técnica-de-documentos
-java=openjdk version "21.0.11" 2026-04-21 LTS
-maven=Apache Maven 3.9.11 (3e54c93a704957b63ee3494413a2b544fd3d825b)
-storageAccount=centinelast5c8658
-container=verification-documents-staging
