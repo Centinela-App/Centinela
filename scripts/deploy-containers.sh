@@ -34,7 +34,10 @@ readonly API_MIN_REPLICAS="${CENTINELA_API_MIN_REPLICAS:-1}"
 readonly API_MAX_REPLICAS="${CENTINELA_API_MAX_REPLICAS:-10}"
 readonly SCORING_MIN_REPLICAS="${CENTINELA_SCORING_MIN_REPLICAS:-0}"
 readonly SCORING_MAX_REPLICAS="${CENTINELA_SCORING_MAX_REPLICAS:-8}"
-readonly EXPLAINER_MIN_REPLICAS="${CENTINELA_EXPLAINER_MIN_REPLICAS:-0}"
+# El explicador es un worker de sondeo SIN ingreso HTTP y sin scaler de eventos:
+# con minimo 0 nunca despierta y las explicaciones quedan PENDING para siempre
+# (observado en despliegue real). Minimo 1 mientras no haya un scaler KEDA.
+readonly EXPLAINER_MIN_REPLICAS="${CENTINELA_EXPLAINER_MIN_REPLICAS:-1}"
 readonly EXPLAINER_MAX_REPLICAS="${CENTINELA_EXPLAINER_MAX_REPLICAS:-3}"
 readonly CPU_PER_REPLICA="0.5"
 readonly MEMORY_PER_REPLICA="1.0Gi"
