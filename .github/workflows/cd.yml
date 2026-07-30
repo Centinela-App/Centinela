@@ -203,6 +203,11 @@ jobs:
           LOCATION: ${{ vars.AZURE_LOCATION }}
           APP_SERVICE_SKU: ${{ vars.APP_SERVICE_SKU }}
           IMAGE_TAG: ${{ needs.publicar-imagenes.outputs.etiqueta }}
+          # Identificador publico, no secreto. Sin el, el script consultaria
+          # Microsoft Graph — que este service principal no puede leer — y el
+          # despliegue moriria sin mensaje. Mismo mecanismo que en el pipeline
+          # del banco de pruebas.
+          CENTINELA_ENTRA_APP_ID: ${{ vars.CENTINELA_ENTRA_APP_ID }}
         run: bash scripts/deploy-containers.sh --tag "$IMAGE_TAG"
 
       - name: Verificar que el sistema responde

@@ -130,7 +130,10 @@ resolve_runtime_configuration() {
   # pipeline puede no tener permiso de lectura sobre Microsoft Graph, y 'az ad
   # app list' fallaria alli aunque el appId sea un identificador publico que el
   # pipeline puede recibir como variable sin comprometer nada.
-  ENTRA_APP_ID="${CENTINELA_ENTRA_APP_ID:-$(az ad app list --display-name "${NAME_PREFIX}-api-week1" --query '[0].appId' -o tsv 2>/dev/null)}"
+  # El '|| true' importa: bajo el SP del pipeline la consulta a Graph falla, y
+  # sin el, 'set -e' abortaria DENTRO de la sustitucion — en silencio, antes
+  # de llegar al die con el mensaje que explica la causa (observado en CD real).
+  ENTRA_APP_ID="${CENTINELA_ENTRA_APP_ID:-$(az ad app list --display-name "${NAME_PREFIX}-api-week1" --query '[0].appId' -o tsv 2>/dev/null || true)}"
   [ -n "$ENTRA_APP_ID" ] && [ "$ENTRA_APP_ID" != "null" ] \
     || die "Falta el registro '${NAME_PREFIX}-api-week1'. Ejecuta provision-entra-app.sh, o define CENTINELA_ENTRA_APP_ID."
   # La audiencia que la API valida es el appId PELADO: con tokens v2
