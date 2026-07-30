@@ -240,3 +240,18 @@ role_assignment_count() {
     --query "value[?contains(properties.roleDefinitionId, '${role_id}')] | length(@)" \
     -o tsv 2>/dev/null || echo 0
 }
+
+# derive_registry_name -> nombre del registro de contenedores.
+# Los nombres de ACR son DNS GLOBAL: "${NAME_PREFIX}acr" a secas puede estar
+# tomado por cualquier suscripcion del mundo (ocurrio con 'centacr'). Se deriva
+# con el mismo hash determinista que el resto de nombres globales del proyecto
+# (Storage, Key Vault), y CENTINELA_REGISTRY_NAME permite fijarlo a mano.
+derive_registry_name() {
+  if [ -n "${CENTINELA_REGISTRY_NAME:-}" ]; then
+    printf '%s' "$CENTINELA_REGISTRY_NAME"
+    return
+  fi
+  local hash
+  hash="$(printf '%s|%s|%s' "$NAME_PREFIX" "$SUBSCRIPTION_ID" "$RESOURCE_GROUP" | sha1sum | cut -c1-6)"
+  printf '%sacr%s' "$NAME_PREFIX" "$hash"
+}

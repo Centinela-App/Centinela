@@ -110,10 +110,22 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Derivar el nombre del registro
+        # Los nombres de ACR son DNS global y '<prefijo>acr' a secas puede estar
+        # tomado por un tercero (ocurrio con 'centacr'). Misma derivacion con
+        # hash que usa scripts/lib/common.sh::derive_registry_name.
+        env:
+          NAME_PREFIX: ${{ vars.NAME_PREFIX }}
+          SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: |
+          hash="$(printf '%s|%s|%s' "$NAME_PREFIX" "$SUBSCRIPTION_ID" "$RESOURCE_GROUP" | sha1sum | cut -c1-6)"
+          echo "REGISTRY=${NAME_PREFIX}acr${hash}" >> "$GITHUB_ENV"
+
       - name: Autenticarse en el registro
         # Token de acceso de vida corta emitido por Azure AD. El usuario
         # administrador del registro esta deshabilitado a proposito.
-        run: az acr login --name "${NAME_PREFIX}acr"
+        run: az acr login --name "$REGISTRY"
 
       - name: Preparar Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -125,8 +137,8 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ${{ vars.NAME_PREFIX }}acr.azurecr.io/centinela-api:${{ steps.etiqueta.outputs.valor }}
-            ${{ vars.NAME_PREFIX }}acr.azurecr.io/centinela-api:latest
+            ${{ env.REGISTRY }}.azurecr.io/centinela-api:${{ steps.etiqueta.outputs.valor }}
+            ${{ env.REGISTRY }}.azurecr.io/centinela-api:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           # NINGUN build-arg con secretos. Un ARG queda grabado en la capa y es
@@ -140,8 +152,8 @@ jobs:
           file: ./scoring-function/Dockerfile
           push: true
           tags: |
-            ${{ vars.NAME_PREFIX }}acr.azurecr.io/centinela-scoring:${{ steps.etiqueta.outputs.valor }}
-            ${{ vars.NAME_PREFIX }}acr.azurecr.io/centinela-scoring:latest
+            ${{ env.REGISTRY }}.azurecr.io/centinela-scoring:${{ steps.etiqueta.outputs.valor }}
+            ${{ env.REGISTRY }}.azurecr.io/centinela-scoring:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
@@ -150,10 +162,10 @@ jobs:
         # Se inspecciona la imagen construida, capa por capa, antes de que llegue
         # a ejecutarse. Encontrar aqui una credencial horneada cuesta un
         # despliegue; encontrarla despues cuesta rotar todo.
-        run: bash scripts/verify/verify-image-secrets.sh "${{ vars.NAME_PREFIX }}acr.azurecr.io/centinela-api:${{ steps.etiqueta.outputs.valor }}"
+        run: bash scripts/verify/verify-image-secrets.sh "${{ env.REGISTRY }}.azurecr.io/centinela-api:${{ steps.etiqueta.outputs.valor }}"
 
       - name: Registrar el tamano de las imagenes
-        run: bash scripts/verify/report-image-size.sh "${{ vars.NAME_PREFIX }}acr.azurecr.io" "${{ steps.etiqueta.outputs.valor }}"
+        run: bash scripts/verify/report-image-size.sh "${{ env.REGISTRY }}.azurecr.io" "${{ steps.etiqueta.outputs.valor }}"
 
   # ---------------------------------------------------------------------------
   # Etapa 5.

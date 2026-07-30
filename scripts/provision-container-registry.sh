@@ -63,7 +63,7 @@ main() {
   require_cmd az
 
   # ACR exige nombre alfanumerico sin guiones, 5-50 caracteres.
-  local registry_name="${NAME_PREFIX}acr"
+  local registry_name; registry_name="$(derive_registry_name)"
   local identity_name="id-${NAME_PREFIX}-acrpull"
 
   [[ "$registry_name" =~ ^[a-z0-9]{5,50}$ ]] \

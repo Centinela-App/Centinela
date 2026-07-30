@@ -334,7 +334,7 @@ Los nombres se **derivan**, no se escriben: sufijo
 | PostgreSQL Flexible | `cent-pg-79d78c` | privado, solo autenticación Entra |
 | Key Vault | `cent-kv-79d78c` | secreto de Cosmos + system keys del host Functions |
 | Event Grid topic | `cent-egt-79d78c` | eventos de transacción |
-| Container Registry | `centacr` | Basic; pull por Managed Identity, admin deshabilitado |
+| Container Registry | `centacr79d78c` | Basic; pull por Managed Identity, admin deshabilitado. Lleva el hash porque el nombre es DNS global (`centacr` a secas ya estaba tomado por un tercero) |
 | Entorno ACA | `cae-cent` | + Log Analytics `cent-logs` y App Insights `appi-cent` |
 | Identidades | `id-cent-apps`, `id-cent-acrpull`, `id-cent-lab` | datos / pull / lab |
 | App Entra (API) | `cent-api-week1` | app roles `SERVICE`, `ANALYST`, `ADMIN`, `AUDITOR` |

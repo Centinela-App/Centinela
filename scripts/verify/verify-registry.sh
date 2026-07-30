@@ -19,7 +19,7 @@ source "$SCRIPT_DIR/../lib/parameters.sh"
 load_parameters
 require_cmd az
 
-REGISTRY="${NAME_PREFIX}acr"
+REGISTRY="$(derive_registry_name)"
 IDENTITY="id-${NAME_PREFIX}-acrpull"
 fail=0
 

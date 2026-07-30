@@ -257,7 +257,7 @@ preflight() {
   [ -n "$IMAGE_TAG" ] || IMAGE_TAG="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo latest)"
 
   HASH="$(printf '%s|%s|%s' "$NAME_PREFIX" "$SUBSCRIPTION_ID" "$RESOURCE_GROUP" | sha1sum | cut -c1-6)"
-  REGISTRY_NAME="${NAME_PREFIX}acr"
+  REGISTRY_NAME="$(derive_registry_name)"
 
   log_info "Plan de despliegue (topologia Container Apps, ADR-009):"
   log_info "  Suscripcion    : $(mask "$SUBSCRIPTION_ID")"

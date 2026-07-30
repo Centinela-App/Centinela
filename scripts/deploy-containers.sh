@@ -64,7 +64,7 @@ main() {
   require_cmd az
 
   local environment_name="cae-${NAME_PREFIX}"
-  local registry_name="${NAME_PREFIX}acr"
+  local registry_name; registry_name="$(derive_registry_name)"
   local identity_name="id-${NAME_PREFIX}-acrpull"
 
   az account show >/dev/null 2>&1 || die "No hay sesion de Azure activa."
