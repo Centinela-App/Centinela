@@ -252,19 +252,20 @@ verify_all_resources() {
   local vnet="$1" rg="$2" app="$3"
 
   log_info "Verificando VNet y subredes..."
-  az network vnet show --name "$vnet" --resource-group "$rg" >/dev/null 2>&1 || die "No existe la VNet '$vnet'."
+  # Las subredes son recursos hijo: se reintenta antes de darlas por ausentes.
+  retry_until 5 az network vnet show --name "$vnet" --resource-group "$rg" || die "No existe la VNet '$vnet'."
+  retry_until 5 az network vnet subnet show --vnet-name "$vnet" --resource-group "$rg" --name "$SUBNET_APP" || die "Falta $SUBNET_APP."
+  retry_until 5 az network vnet subnet show --vnet-name "$vnet" --resource-group "$rg" --name "$SUBNET_PE"  || die "Falta $SUBNET_PE."
   local subnet_count
   subnet_count="$(az network vnet show --name "$vnet" --resource-group "$rg" \
     --query "length(subnets)" -o tsv 2>/dev/null || echo 0)"
   [ "$subnet_count" = "2" ] || die "La VNet debe tener exactamente 2 subredes (actual: $subnet_count)."
-  az network vnet subnet show --vnet-name "$vnet" --resource-group "$rg" --name "$SUBNET_APP" >/dev/null 2>&1 || die "Falta $SUBNET_APP."
-  az network vnet subnet show --vnet-name "$vnet" --resource-group "$rg" --name "$SUBNET_PE"  >/dev/null 2>&1 || die "Falta $SUBNET_PE."
   log_info "  OK 2 subredes: $SUBNET_APP (delegada) y $SUBNET_PE (PE)."
 
   log_info "Verificando zonas DNS privadas y vinculos..."
   local z
   for z in "$DNS_ZONE_BLOB" "$DNS_ZONE_QUEUE"; do
-    az network private-dns zone show --name "$z" --resource-group "$rg" >/dev/null 2>&1 || die "Falta zona DNS: $z"
+    retry_until 5 az network private-dns zone show --name "$z" --resource-group "$rg" || die "Falta zona DNS: $z"
     az network private-dns link vnet list --zone-name "$z" --resource-group "$rg" \
       --query "[?virtualNetwork.id != null] | length(@)" -o tsv 2>/dev/null | grep -q '^[1-9]' \
       || die "Zona DNS '$z' sin vinculo a la VNet."
@@ -317,7 +318,7 @@ main() {
   else
     local tmp_dir template_file params_file
     tmp_dir="$(mktemp -d)"
-    trap 'rm -rf "$tmp_dir"' EXIT
+    trap "rm -rf '$tmp_dir'" EXIT
     template_file="$tmp_dir/network.template.json"
     params_file="$tmp_dir/network.parameters.json"
     render_arm_template > "$template_file"

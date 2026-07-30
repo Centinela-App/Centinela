@@ -2,9 +2,31 @@ spring:
   application:
     name: centinela
 
-# Configuracion base. Los valores por ambiente (staging/production) y los nombres
-# de contenedores/colas se inyectan como app settings del App Service (ISS-004),
-# nunca como secretos versionados.
+  # FEAT-S2-001: Configuracion de PostgreSQL para gestion de casos.
+  # La conexion NO usa password; usa Managed Identity via env vars inyectadas.
+  datasource:
+    # In Azure, CENTINELA_POSTGRES_JDBC_URL must include:
+    # sslmode=require&authenticationPluginClassName=com.azure.identity.extensions.jdbc.postgresql.AzurePostgresqlAuthenticationPlugin
+    url: ${CENTINELA_POSTGRES_JDBC_URL:jdbc:postgresql://localhost:5432/centinela}
+    username: ${CENTINELA_POSTGRES_USER:}
+    # Vacia en Azure: alli autentica el plugin de Managed Identity y esta propiedad
+    # no participa. Solo el PostgreSQL local de docker-compose la usa. Antes de
+    # existir no habia forma de conectar con un PostgreSQL corriente: el unico
+    # camino de autenticacion era Azure.
+    password: ${CENTINELA_POSTGRES_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
 
 management:
   endpoints:
@@ -18,17 +40,75 @@ management:
 
 centinela:
   storage:
+    # Las tres cadenas de conexion permanecen VACIAS en Azure (autentica Managed
+    # Identity). Solo el perfil local las llena, apuntando a Azurite, cuya clave es
+    # una constante publica del emulador y no una credencial.
     blob:
       account-name: ${CENTINELA_STORAGE_ACCOUNT}
       container-name: ${CENTINELA_RAW_TRANSACTIONS_CONTAINER}
+      connection-string: ${CENTINELA_STORAGE_CONNECTION_STRING:}
     documents:
       account-name: ${CENTINELA_STORAGE_ACCOUNT}
       container-name: ${CENTINELA_VERIFICATION_DOCUMENTS_CONTAINER}
+      connection-string: ${CENTINELA_STORAGE_CONNECTION_STRING:}
+    queue:
+      connection-string: ${CENTINELA_STORAGE_CONNECTION_STRING:}
+  queue:
+    adapter: azure-storage-queue
+    flagged-cases:
+      name: ${CENTINELA_FLAGGED_CASES_QUEUE:flagged-cases-production}
+      visibility-timeout: PT30S
+      poll-interval: PT5S
+    consumer:
+      auto-start: ${CENTINELA_QUEUE_AUTO_START:true}
   security:
     entra:
-      # Issuer, audience y JWK set URI de la app registration en Entra ID.
-      # Ninguno de estos valores es secreto; se inyectan como app settings
-      # del App Service (ISS-004), nunca versionados con valores reales.
       issuer-uri: ${CENTINELA_ENTRA_ISSUER_URI}
       audience: ${CENTINELA_ENTRA_AUDIENCE}
       jwk-set-uri: ${CENTINELA_ENTRA_JWK_SET_URI}
+  cosmos:
+    connection-string: ${CENTINELA_COSMOS_CONNECTION_STRING:}
+
+  # ------------------------------------------------------------------
+  # Semana 3. La misma imagen cumple tres papeles distintos segun que
+  # interruptores encienda la plataforma: API de ingesta y consulta,
+  # explicador de casos, o extractor documental. Todos nacen apagados
+  # para que un despliegue sin configurar no abra conexiones que no usa
+  # ni levante trabajos de fondo inesperados.
+  # ------------------------------------------------------------------
+
+  # Lectura del registro que el motor dejo en Cosmos. Lo necesitan tanto
+  # el explicador como la API de consulta.
+  scoring-record:
+    enabled: ${CENTINELA_SCORING_RECORD_ENABLED:false}
+    cosmos:
+      connection-string: ${CENTINELA_COSMOS_MONGO_CONNECTION_STRING:}
+      database: ${COSMOS_DATABASE:centinela}
+      collection: ${COSMOS_COLLECTION:transactions}
+
+  # API de consulta de analisis y de casos.
+  inquiry:
+    enabled: ${CENTINELA_INQUIRY_ENABLED:false}
+
+  # Explicador de casos. Se despliega como contenedor aparte para poder
+  # detenerlo sin afectar la ingesta.
+  explainer:
+    enabled: ${CENTINELA_EXPLAINER_ENABLED:false}
+    batch-size: ${CENTINELA_EXPLAINER_BATCH_SIZE:25}
+    max-attempts: ${CENTINELA_EXPLAINER_MAX_ATTEMPTS:5}
+    poll-interval-ms: ${CENTINELA_EXPLAINER_POLL_INTERVAL_MS:5000}
+    initial-delay-ms: ${CENTINELA_EXPLAINER_INITIAL_DELAY_MS:10000}
+
+  # Extraccion de datos del documento de identidad.
+  document-verification:
+    enabled: ${CENTINELA_DOCUMENT_VERIFICATION_ENABLED:false}
+    batch-size: ${CENTINELA_DOCUMENT_VERIFICATION_BATCH_SIZE:10}
+    poll-interval-ms: ${CENTINELA_DOCUMENT_VERIFICATION_POLL_INTERVAL_MS:5000}
+    initial-delay-ms: ${CENTINELA_DOCUMENT_VERIFICATION_INITIAL_DELAY_MS:10000}
+
+  messaging:
+    eventgrid:
+      topic-endpoint: ${CENTINELA_EVENTGRID_TOPIC_ENDPOINT:}
+  ratelimit:
+    capacity: ${CENTINELA_RATELIMIT_CAPACITY:120}
+    refill-period-ms: ${CENTINELA_RATELIMIT_REFILL_MS:60000}

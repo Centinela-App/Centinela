@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centinela.app/schemas/flagged-case-v1.json",
+  "title": "flagged-case-v1",
+  "description": "Mensaje de caso marcado, encolado por la Function cuando el score supera el umbral (Function -> Storage Queue -> consumidor). Es el disparador de apertura de caso. El detalle completo de activacion (valores observados) se persiste en Cosmos junto a la transaccion; aqui solo viaja un resumen.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "transactionId",
+    "accountId",
+    "score",
+    "triggeredRules",
+    "occurredAt",
+    "scoredAt",
+    "traceparent"
+  ],
+  "properties": {
+    "transactionId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Transaccion que disparo el caso. Clave de idempotencia: reprocesar el mismo mensaje no abre un caso duplicado."
+    },
+    "accountId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Cuenta asociada al caso."
+    },
+    "score": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Puntaje total (suma de los puntos de las reglas activadas) que supero el umbral."
+    },
+    "triggeredRules": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Resumen de las reglas activadas. Solo id y puntos; el detalle con valores observados vive en Cosmos.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ruleId", "points"],
+        "properties": {
+          "ruleId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Identificador de la regla activada (p. ej. VELOCITY, ATYPICAL_AMOUNT, GEO_IMPOSSIBLE, RISKY_MERCHANT)."
+          },
+          "points": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Puntos aportados por la regla al score total."
+          }
+        }
+      }
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Momento en que ocurrio la transaccion (RFC 3339)."
+    },
+    "scoredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Momento en que la Function calculo el score (RFC 3339)."
+    },
+    "traceparent": {
+      "type": "string",
+      "pattern": "^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$",
+      "description": "Mismo contexto de traza W3C que traia transaction-event-v1. Se reemite sin alterar el trace-id para que la apertura del caso y su explicacion queden bajo la misma traza que la ingesta y el scoring."
+    }
+  }
+}

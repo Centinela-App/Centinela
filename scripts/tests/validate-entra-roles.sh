@@ -21,7 +21,7 @@ fail() { RESULTS+=("FAIL  $*"); FAIL=$((FAIL + 1)); log_error "$*"; }
 print_report() {
   printf '\n============== ISS-S1-006 / TEST-S1-008 ==============\n'
   for r in "${RESULTS[@]}"; do printf '%s\n' "$r"; done
-  printf '------------------------------------------------------\n'
+  printf '%s\n' '------------------------------------------------------'
   printf 'Resumen: %d PASS / %d FAIL\n' "$PASS" "$FAIL"
   printf '======================================================\n'
 }
@@ -29,6 +29,8 @@ cleanup() { local rc="${1:-$?}"; trap - EXIT; print_report; [ "$rc" -ne 0 ] && e
 trap 'cleanup $?' EXIT
 
 require_cmd az
+require_cmd jq
+require_cmd sha1sum
 az account show >/dev/null 2>&1 || die "No hay sesion de Azure activa."
 load_parameters
 validate_parameters
@@ -79,6 +81,28 @@ for r in ANALYST ADMINISTRATOR AUDITOR; do
   else
     fail "Rol $r allowedMemberTypes='$t' (esperado 'User')."
   fi
+done
+
+
+# Resource Server: issuer, audience y JWK URI deben estar aplicados en ambos slots.
+hash="$(printf '%s|%s|%s' "$NAME_PREFIX" "$SUBSCRIPTION_ID" "$RESOURCE_GROUP" | sha1sum | cut -c1-6)"
+app_name="${NAME_PREFIX}-app-${hash}"
+tenant_id="$(az account show --query tenantId -o tsv)"
+expected_issuer="https://login.microsoftonline.com/${tenant_id}/v2.0"
+expected_audience="api://${APP_ID}"
+expected_jwk="https://login.microsoftonline.com/${tenant_id}/discovery/v2.0/keys"
+
+for slot in production staging; do
+  slot_args=()
+  [ "$slot" = "staging" ] && slot_args=(--slot staging)
+  settings="$(az webapp config appsettings list --name "$app_name" --resource-group "$RESOURCE_GROUP" "${slot_args[@]}" -o json 2>/dev/null || echo '[]')"
+  issuer="$(printf '%s' "$settings" | jq -r '.[] | select(.name=="CENTINELA_ENTRA_ISSUER_URI") | .value' | head -n1)"
+  audience="$(printf '%s' "$settings" | jq -r '.[] | select(.name=="CENTINELA_ENTRA_AUDIENCE") | .value' | head -n1)"
+  jwk="$(printf '%s' "$settings" | jq -r '.[] | select(.name=="CENTINELA_ENTRA_JWK_SET_URI") | .value' | head -n1)"
+
+  [ "$issuer" = "$expected_issuer" ] && ok "$slot tiene issuer OAuth2 correcto." || fail "$slot tiene issuer OAuth2 incorrecto o ausente."
+  [ "$audience" = "$expected_audience" ] && ok "$slot tiene audience OAuth2 correcto." || fail "$slot tiene audience OAuth2 incorrecto o ausente."
+  [ "$jwk" = "$expected_jwk" ] && ok "$slot tiene JWK URI correcto." || fail "$slot tiene JWK URI incorrecto o ausente."
 done
 
 cleanup

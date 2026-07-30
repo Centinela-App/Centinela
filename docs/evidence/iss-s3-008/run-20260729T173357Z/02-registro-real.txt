@@ -1,0 +1,19 @@
+# Registro creado: SKU, usuario administrador e identidad de pull
+# comando: bash scripts/verify/verify-registry.sh
+# ------------------------------------------------------------------
+[INFO]  Cargando parametros desde /c/Users/carlo/Desktop/Repositories/Centinela/scripts/lib/../../.env
+[verify-registry] Registro: centacr
+[verify-registry]   OK — existe — SKU Basic, servidor centacr.azurecr.io
+[verify-registry]   OK — usuario administrador deshabilitado
+[verify-registry]   OK — identidad de pull 'id-cent-acrpull' existe
+[verify-registry]   OK — AcrPull asignado sobre el registro (1 asignacion/es)
+[verify-registry]   aviso: hay 1 asignacion/es de 'AcrPush' sobre el registro; revisar que correspondan al pipeline y no a la identidad de pull
+[verify-registry]   aviso: hay 1 asignacion/es de 'Contributor' sobre el registro; revisar que correspondan al pipeline y no a la identidad de pull
+[verify-registry]   aviso: hay 1 asignacion/es de 'Owner' sobre el registro; revisar que correspondan al pipeline y no a la identidad de pull
+[verify-registry] Imagenes publicadas:
+[verify-registry]   OK — centinela-api (2 etiquetas)
+[verify-registry]   OK — centinela-scoring (2 etiquetas)
+
+[verify-registry] RESULTADO: OK
+
+# RESULTADO: OK

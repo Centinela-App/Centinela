@@ -1,0 +1,50 @@
+# =============================================================================
+# Lo que NUNCA debe entrar al contexto de construccion.
+#
+# No es solo una cuestion de tamano. Todo lo que se envia al daemon puede acabar
+# en una capa, y las capas conservan lo que se borra despues. El caso critico es
+# .env: bastaria un COPY . mal escrito para hornear credenciales reales en la
+# imagen, recuperables con `docker history`.
+# =============================================================================
+
+# Credenciales y configuracion local — la razon principal de este archivo.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+local.settings.json
+
+# Historia de Git: contiene todo el pasado del repositorio, incluidos secretos
+# ya remediados que siguen vivos en commits anteriores.
+.git
+.gitignore
+.gitattributes
+
+# Artefactos de construccion locales. Se reconstruyen dentro de la imagen; si se
+# copiaran, la imagen dependeria de lo que hubiera en la maquina del operador.
+target/
+*/target/
+build/
+out/
+
+# Entorno de desarrollo.
+.idea/
+*.iml
+.vscode/
+.claude/
+
+# Documentacion y evidencias: decenas de megabytes que no ejecuta nadie.
+docs/
+*.md
+!README.md
+image*.jpeg
+image*.png
+
+# Scripts de operacion: se ejecutan desde el repositorio, nunca desde la imagen.
+scripts/
+
+# El otro modulo, cuando se construye este.
+centinela-lab/

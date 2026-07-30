@@ -1,28 +1,39 @@
-# Evidencia ISS-S1-010 — Validar escritura, lectura y eliminación en Queue Storage
+# Evidencia ISS-S1-010 — Roundtrip real de Queue Storage
 
-**Prueba obligatoria:** TEST-S1-020 (roundtrip de Queue Storage).
+**Prueba obligatoria:** TEST-S1-020.
 
 ## Estado
 
-- **Código/scripts:** completos y restaurados (`scripts/validate-queue.sh`,
-  `scripts/tests/test-queue-roundtrip.sh`). Reintegrados tras el revert accidental del PR #26.
-- **Verificación local reproducible:** `01-syntax-check.txt` — `bash -n` OK en ambos scripts.
-- **Ejecución del roundtrip real:** requiere una suscripción Azure activa con la cola
-  provisionada (`transactions-ingestion-{staging|production}`), conectividad privada y la
-  asignación temporal `Storage Queue Data Message Processor`.
+- Scripts corregidos: `scripts/validate-queue.sh` y
+  `scripts/tests/test-queue-roundtrip.sh`.
+- La ejecución real sigue pendiente hasta correrla en Azure desde un host conectado a la
+  VNet. No se considera válida una corrida desde un host que resuelva el endpoint público.
 
-## Comandos reproducibles (con suscripción)
+## Comportamiento exigido
+
+La prueba:
+
+1. verifica que Storage conserve `publicNetworkAccess=Disabled`;
+2. confirma que el nombre de Queue resuelva a una IP privada;
+3. envía un mensaje con `testRunId` único;
+4. busca exactamente ese mensaje sin asumir que la cola está vacía;
+5. lo elimina usando `messageId` y `popReceipt`;
+6. confirma que el `testRunId` propio ya no existe.
+
+Para enviar, recibir y eliminar se requieren temporalmente los dos roles mínimos:
+
+- `Storage Queue Data Message Sender`;
+- `Storage Queue Data Message Processor`.
+
+El orquestador final registra cuáles asignaciones creó y revoca únicamente esas
+asignaciones al terminar.
+
+## Comandos aislados
 
 ```bash
-./scripts/validate-queue.sh staging
-./scripts/validate-queue.sh production
+bash scripts/validate-queue.sh staging
+bash scripts/validate-queue.sh production
 ```
 
-El script envía un mensaje técnico (`testRunId`, `environment`, `createdAt`), lo recibe,
-valida el `testRunId`, lo elimina con el pop receipt y confirma que no quedan residuos.
-
-## Pendiente de suscripción Azure
-
-Payload sanitizado, ID de mensaje, confirmación de eliminación y evidencia de revocación
-de la asignación temporal — se generan al ejecutar contra la cola real. No se fabrica
-evidencia de Azure (regla del DoD: "No simular evidencia").
+La evidencia por corrida queda bajo `docs/evidence/queue/run-*/` e incluye payload
+sanitizado, respuesta de envío, mensajes inspeccionados, eliminación y resumen final.

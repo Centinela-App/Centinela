@@ -1,50 +1,46 @@
-# Evidence Final - Semana 1
+# Evidencia final — Semana 1
 
-Carpeta para almacenar evidencia de las pruebas de cierre de Semana 1.
+Esta carpeta contiene las corridas de TEST-S1-026 y TEST-S1-027. Cada corrida completa
+usa `docs/evidence/final/run-drc-<timestamp>-<id>/`.
 
-## Runs de Prueba
-
-Cada ejecución de prueba genera una carpeta con el formato `run-{timestamp}-{random-id}/`:
-
-```
-docs/evidence/final/
-├── README.md                    # Este archivo
-├── run-YYYYMMDDTHHMMSS-xxxx/   # Carpeta de run
-│   ├── metadata.json          # Metadata del run
-│   ├── deployment.log         # Log de despliegue
-│   ├── validation-summary.md  # Resumen de validaciones
-│   ├── resource-inventory.json # Inventario de recursos
-│   └── cleanup.log           # Log de limpieza
-```
-
-## Comandos para Generar Evidencia
+## Ejecución recomendada
 
 ```bash
-# TEST-S1-026: Clean Deploy
-bash scripts/tests/test-clean-deploy.sh
-
-# TEST-S1-027: Destroy -> Rebuild -> Cleanup
-bash scripts/tests/test-destroy-rebuild-cleanup.sh
+bash scripts/tests/test-destroy-rebuild-cleanup.sh \
+  --confirm-resource-group "$RESOURCE_GROUP"
 ```
 
-## Notas sobre Sanitización
+La confirmación explícita es obligatoria porque la prueba elimina el Resource Group al
+inicio y al final. Debe usarse un RG exclusivo para el cierre, sin recursos de Semana 2
+que necesiten conservarse.
 
-- Todos los logs son revisados antes de commit
-- Subscription IDs son enmascarados con `mask()`
-- Tokens y credenciales son filtrados
-- Resource names pueden incluir prefijos sensibles (revisar antes de commit)
+## Contenido de una corrida
 
-## Actualización del Índice
+- `metadata.json`: commit, rama, fecha, RG sanitizado y resultado;
+- `pre-destroy-inventory.json`: inventario previo cuando existía el RG;
+- `destroy.log`: destrucción inicial con espera;
+- `deployment.log` y `application-deploy.log`: infraestructura y aplicación;
+- `maven-verify.log`: suite Maven estricta;
+- `validate-*.log`: validaciones concretas de Semana 1;
+- `queue-staging.log` y `queue-production.log`;
+- `ha.log`;
+- `temporary-rbac.log`: asignaciones temporales sanitizadas y revocación;
+- `resource-inventory.json`;
+- `cleanup.log`;
+- `validation-summary.md`.
 
-Después de cada run, actualizar `docs/evidence/INDEX.md` con la referencia al run.
+## Reglas de aprobación
 
-## Estado de la prueba de cierre (ISS-S1-014)
+- No se transforma un error o warning en resultado exitoso.
+- La destrucción espera hasta comprobar que el RG desapareció.
+- La reconstrucción despliega infraestructura **y** artefacto de aplicación.
+- Entra configura issuer, audience y JWK URI en producción y staging.
+- Queue pasa en ambos ambientes y elimina solamente su mensaje técnico.
+- HA reconcilia todos los `202`, restaura una instancia y limpia datos sintéticos.
+- Solo se revocan los roles temporales creados por la corrida.
+- Sin `--keep-resources`, el cierre termina con el RG ausente.
+- La App Registration también se elimina, salvo la excepción documentada
+  `--keep-entra-final` cuando continúa siendo usada por una semana posterior.
 
-- **Scripts:** completos (`test-clean-deploy.sh`, `test-destroy-rebuild-cleanup.sh`) y
-  `deploy-week1.sh` / `destroy-week1.sh` reintegrados tras el revert del PR #26 (incluida
-  la limpieza tenant-level de la App Registration de Entra en `destroy-week1.sh`).
-- **Verificación local reproducible:** `01-syntax-check.txt` — `bash -n` OK en todos los
-  scripts de despliegue, destrucción y validación.
-- **Run final destrucción → reconstrucción → limpieza:** requiere una suscripción Azure
-  activa. Genera `deployment.log`, `validation-summary.md`, `resource-inventory.json` y
-  `cleanup.log` bajo `run-{timestamp}/`. No se fabrica evidencia de Azure (regla del DoD).
+La evidencia no se declara completada hasta ejecutar la corrida Azure real. No se fabrica
+ni se reemplaza por salidas esperadas.

@@ -1,32 +1,35 @@
-# Evidencia ISS-S1-012 — Probar alta disponibilidad de la API
+# Evidencia ISS-S1-012 — Alta disponibilidad de la API
 
-**Prueba obligatoria:** TEST-S1-024 (mantener disponibilidad al retirar una instancia).
+**Prueba obligatoria:** TEST-S1-024.
 
 ## Estado
 
-- **Código/scripts:** completos (`scripts/test-ha.sh`, `scripts/tests/send-transaction-load.sh`,
-  `scripts/tests/reconcile-accepted-transactions.sh`).
-- **Verificación local reproducible:** `01-syntax-check.txt` — `bash -n` OK en los tres scripts.
-- **Ejecución de la prueba HA real:** requiere el App Service desplegado y una suscripción
-  activa para escalar temporalmente a dos instancias, retirar una y reconciliar cada `202`
-  con su Blob.
+- Scripts corregidos: `scripts/test-ha.sh`,
+  `scripts/tests/send-transaction-load.sh` y
+  `scripts/tests/reconcile-accepted-transactions.sh`.
+- La corrida Azure real sigue pendiente hasta ejecutarla contra la aplicación desplegada.
 
-## Diseño verificado (estático)
+## Comportamiento exigido
 
-- Registra la capacidad original y la restaura en `trap`/`finally` (vuelve a una instancia
-  aunque la prueba falle).
-- Escala temporalmente a dos instancias, retira una durante carga continua y contabiliza
-  solicitudes totales, aceptadas, fallidas y reconciliadas.
-- Reconcilia cada `202` con el Blob correspondiente (no declara éxito solo por HTTP).
+La prueba:
 
-## Comandos reproducibles (con suscripción)
+1. exige capacidad inicial igual a `1`;
+2. escala el App Service Plan a `2` y confirma el cambio;
+3. mantiene carga autenticada mientras vuelve a `1`;
+4. separa fallos de transporte, respuestas `5xx` y otras respuestas HTTP;
+5. reconcilia cada transacción aceptada con HTTP `202` contra su Blob;
+6. restaura la capacidad original aun si ocurre un error;
+7. elimina los Blobs sintéticos de la corrida.
+
+No pasa si no hubo solicitudes, no hubo respuestas `202`, falta algún Blob aceptado, la
+capacidad final no es `1` o un subproceso termina con error.
+
+## Comando aislado
 
 ```bash
-./scripts/test-ha.sh
-./scripts/tests/reconcile-accepted-transactions.sh
+bash scripts/test-ha.sh
 ```
 
-## Pendiente de suscripción Azure
-
-Archivo de carga con IDs y estados, evento de retirada de instancia y reporte de
-reconciliación con capacidad final = 1 — se generan al ejecutar contra el App Service real.
+Requiere `CENTINELA_SERVICE_TOKEN`, conectividad privada a Blob y permiso temporal
+`Storage Blob Data Contributor` sobre `raw-transactions-production`. La evidencia queda
+en `docs/evidence/ha/run-*/`.

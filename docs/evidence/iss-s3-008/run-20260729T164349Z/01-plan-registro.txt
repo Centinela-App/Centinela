@@ -1,0 +1,12 @@
+# Plan de aprovisionamiento del registro, sin crear nada
+# comando: bash scripts/provision-container-registry.sh --validate-only
+# ------------------------------------------------------------------
+[INFO]  Cargando parametros desde /c/Users/carlo/Desktop/Repositories/Centinela/scripts/lib/../../.env
+[INFO]  Parametros validados correctamente.
+[INFO]  Plan de ISS-S3-007:
+[INFO]    Registro          : centacr (SKU Basic, admin deshabilitado)
+[INFO]    Identidad de pull : id-cent-acrpull
+[INFO]    Rol asignado      : AcrPull (unicamente)
+[INFO]  Modo --validate-only: no se crea nada.
+
+# RESULTADO: OK

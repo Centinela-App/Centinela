@@ -59,6 +59,10 @@ readonly STICKY_SETTINGS=(
   "CENTINELA_RAW_TRANSACTIONS_CONTAINER"
   "CENTINELA_VERIFICATION_DOCUMENTS_CONTAINER"
   "CENTINELA_INGESTION_QUEUE"
+  "CENTINELA_POSTGRES_JDBC_URL"
+  "CENTINELA_POSTGRES_USER"
+  "CENTINELA_FLAGGED_CASES_QUEUE"
+  "CENTINELA_QUEUE_AUTO_START"
 )
 
 readonly TAGS=(
@@ -162,9 +166,17 @@ render_arm_template() {
 
   # Settings comunes (compartidos, NO sticky): identifican la cuenta de Storage
   # compartida y el puerto del contenedor Java. Iguales en ambos ambientes.
+  #
+  # WEBSITES_CONTAINER_START_TIME_LIMIT: el arranque real de esta app ronda los
+  #   205s (Spring Boot + migraciones Flyway + primera conexion a PostgreSQL por
+  #   Private Endpoint) y el limite por defecto de Azure son 230s. Con 25s de
+  #   margen el despliegue falla de forma intermitente con ContainerStartupFailure
+  #   aunque la app este perfectamente sana. Se sube a 600s: no retrasa nada
+  #   cuando el arranque es rapido, solo evita que Azure cancele uno lento.
   local common_settings
   common_settings="$(render_app_settings_json \
     "CENTINELA_STORAGE_ACCOUNT=${sa_name}" \
+    "WEBSITES_CONTAINER_START_TIME_LIMIT=600" \
     "WEBSITES_PORT=8080")"
 
   # Settings de PRODUCCION (sticky): ambiente + recursos logicos '*-production'.
@@ -321,24 +333,31 @@ deploy_app_service_via_arm() {
 verify_all_resources() {
   local plan_name="$1" app_name="$2" rg="$3"
 
+  # El slot y la identidad son recursos hijo: pueden tardar unos segundos en ser
+  # consultables aunque el deployment ARM ya haya reportado exito.
   log_info "Verificando Web App de produccion..."
-  az webapp show --name "$app_name" --resource-group "$rg" >/dev/null 2>&1 \
+  retry_until 5 az webapp show --name "$app_name" --resource-group "$rg" \
     || die "No existe la Web App '$app_name'."
   log_info "  OK Web App: $app_name"
 
   log_info "Verificando slot '$SLOT_NAME'..."
-  az webapp show --name "$app_name" --resource-group "$rg" --slot "$SLOT_NAME" >/dev/null 2>&1 \
+  retry_until 5 az webapp show --name "$app_name" --resource-group "$rg" --slot "$SLOT_NAME" \
     || die "No existe el slot '$SLOT_NAME' en '$app_name'."
   log_info "  OK slot: $SLOT_NAME"
 
   log_info "Verificando Managed Identity (produccion y staging)..."
   local prod_pid staging_pid
+  webapp_identity_present() {
+    [ -n "$(az webapp identity show "$@" --query principalId -o tsv 2>/dev/null || true)" ]
+  }
+  retry_until 5 webapp_identity_present --name "$app_name" --resource-group "$rg" \
+    || die "Produccion sin System Assigned Managed Identity."
+  retry_until 5 webapp_identity_present --name "$app_name" --resource-group "$rg" --slot "$SLOT_NAME" \
+    || die "Staging sin System Assigned Managed Identity."
   prod_pid="$(az webapp identity show --name "$app_name" --resource-group "$rg" \
     --query principalId -o tsv 2>/dev/null || true)"
   staging_pid="$(az webapp identity show --name "$app_name" --resource-group "$rg" \
     --slot "$SLOT_NAME" --query principalId -o tsv 2>/dev/null || true)"
-  [ -n "$prod_pid" ]    || die "Produccion sin System Assigned Managed Identity."
-  [ -n "$staging_pid" ] || die "Staging sin System Assigned Managed Identity."
   log_info "  OK identidad produccion: $(mask "$prod_pid")"
   log_info "  OK identidad staging:    $(mask "$staging_pid")"
 
@@ -358,9 +377,11 @@ verify_all_resources() {
   local capacity
   capacity="$(az appservice plan show --name "$plan_name" --resource-group "$rg" \
     --query "sku.capacity" -o tsv 2>/dev/null || echo "?")"
-  [ "$capacity" = "1" ] \
-    || log_warn "El plan tiene capacity=$capacity (esperado 1 en operacion normal)."
-  [ "$capacity" = "1" ] && log_info "  OK plan en 1 instancia."
+  if [ "$capacity" = "1" ]; then
+    log_info "  OK plan en 1 instancia."
+  else
+    log_warn "El plan tiene capacity=$capacity (esperado 1 en operacion normal)."
+  fi
 }
 
 # --- Main ----------------------------------------------------------------------
@@ -398,7 +419,7 @@ main() {
 
   local tmp_dir template_file params_file
   tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "$tmp_dir"' EXIT
+  trap "rm -rf '$tmp_dir'" EXIT
   template_file="$tmp_dir/app-service.template.json"
   params_file="$tmp_dir/app-service.parameters.json"
   render_arm_template    "$plan_name" "$app_name" "$APP_SERVICE_SKU" "$tier" "$sa_name" > "$template_file"

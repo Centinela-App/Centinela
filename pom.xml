@@ -61,7 +61,42 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
-        <!-- SDKs de Azure para Blob con autenticacion mediante DefaultAzureCredential. -->
+        <!-- JPA para persistencia de casos (Semana 2). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.azure</groupId>
+            <artifactId>azure-storage-queue</artifactId>
+        </dependency>
+
+        <!--
+          Lectura del registro de scoring por el explicador de casos (Semana 3).
+          El detalle de activacion vive en Cosmos DB for MongoDB junto a la transaccion;
+          el mensaje de cola solo transporta un resumen.
+        -->
+        <dependency>
+            <groupId>org.mongodb</groupId>
+            <artifactId>mongodb-driver-sync</artifactId>
+            <version>5.2.1</version>
+        </dependency>
+
+        <!--
+          Extraccion documental ejecutada dentro del componente (plan alternativo del
+          enunciado cuando el servicio administrado de reconocimiento no esta disponible
+          en la suscripcion). No incluye OCR: un escaneo sin capa de texto se reporta
+          como ilegible en vez de devolver campos vacios.
+        -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.3</version>
+        </dependency>
         <dependency>
             <groupId>com.azure</groupId>
             <artifactId>azure-storage-blob</artifactId>
@@ -70,9 +105,13 @@
             <groupId>com.azure</groupId>
             <artifactId>azure-identity</artifactId>
         </dependency>
+
+        <!-- Publicacion del evento de transaccion en Event Grid (ISS-S2-006).
+             Version gestionada por azure-sdk-bom; autenticacion por Managed
+             Identity via DefaultAzureCredential (sin claves versionadas). -->
         <dependency>
             <groupId>com.azure</groupId>
-            <artifactId>azure-storage-queue</artifactId>
+            <artifactId>azure-messaging-eventgrid</artifactId>
         </dependency>
 
         <!-- Pruebas. -->
@@ -87,6 +126,30 @@
             <groupId>com.tngtech.archunit</groupId>
             <artifactId>archunit-junit5</artifactId>
             <version>${archunit.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Migraciones versionadas del esquema de casos. -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+
+        <!-- Plugin JDBC oficial para obtener token Entra/Managed Identity sin password. -->
+        <dependency>
+            <groupId>com.azure</groupId>
+            <artifactId>azure-identity-extensions</artifactId>
+            <version>1.2.0</version>
+        </dependency>
+
+        <!-- FEAT-S2-001: Base de datos en memoria para tests de integracion. -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

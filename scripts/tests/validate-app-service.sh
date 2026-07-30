@@ -70,7 +70,7 @@ fail() { RESULTS+=("FAIL  $*"); FAIL=$((FAIL + 1)); log_error "$*"; }
 print_report() {
   printf '\n============== ISS-S1-004 / TEST-S1-006 ==============\n'
   for r in "${RESULTS[@]}"; do printf '%s\n' "$r"; done
-  printf '------------------------------------------------------\n'
+  printf '%s\n' '------------------------------------------------------'
   printf 'Resumen: %d PASS / %d FAIL\n' "$PASS" "$FAIL"
   printf '======================================================\n'
 }
@@ -216,18 +216,30 @@ setting_value() {
   # $1 = json array, $2 = nombre. Devuelve el valor o MISSING.
   printf '%s' "$1" | az_jq "$2"
 }
-# jq puede no estar; usamos python3 si esta, o fallback con grep/sed.
+# jq puede no estar en el PATH aunque este instalado (Windows): discover_tool lo
+# ubica. Si tampoco aparece, se usa python3 REAL -- en Windows 'command -v python3'
+# encuentra el stub de Microsoft Store, que no ejecuta nada y devuelve vacio, asi
+# que hay que probarlo de verdad antes de confiar en el.
 az_jq() {
   local name="$1" json
   json="$(cat)"
+
+  discover_tool jq >/dev/null 2>&1 || true
   if command -v jq >/dev/null 2>&1; then
-    printf '%s' "$json" | jq -r --arg n "$name" '(.[] | select(.name==$n) | .value) // "MISSING"'
-  elif command -v python3 >/dev/null 2>&1; then
-    printf '%s' "$json" | python3 -c "import sys,json;n='$name';d=json.load(sys.stdin);print(next((x['value'] for x in d if x.get('name')==n),'MISSING'))"
-  else
-    # Fallback minimalista (asume objetos {\"name\":..,\"value\":..}).
-    printf '%s' "$json" | tr ',' '\n' | grep -A0 "\"$name\"" >/dev/null 2>&1 && echo "UNPARSED" || echo "MISSING"
+    # Se materializa la lista antes de decidir: '(.[]|...) // "MISSING"' NO
+    # produce "MISSING" cuando no hay coincidencia, deja el flujo vacio.
+    printf '%s' "$json" | jq -r --arg n "$name" \
+      '[.[] | select(.name==$n) | .value] | if length > 0 then .[0] else "MISSING" end'
+    return 0
   fi
+
+  if command -v python3 >/dev/null 2>&1 && python3 -c 'pass' >/dev/null 2>&1; then
+    printf '%s' "$json" | python3 -c \
+      "import sys,json;n='$name';d=json.load(sys.stdin);print(next((x['value'] for x in d if x.get('name')==n),'MISSING'))"
+    return 0
+  fi
+
+  echo "SIN-PARSER"
 }
 
 for key in "${STICKY_SETTINGS[@]}"; do

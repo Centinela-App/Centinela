@@ -77,6 +77,66 @@ render_app_roles_json() {
   printf ']'
 }
 
+
+compute_web_app_name() {
+  local prefix="$1" sub_id="$2" rg="$3" hash
+  hash="$(printf '%s|%s|%s' "$prefix" "$sub_id" "$rg" | sha1sum | cut -c1-6)"
+  printf '%s-app-%s' "$prefix" "$hash"
+}
+
+configure_resource_server_settings() {
+  local app_id="$1" tenant_id="$2" app_name
+  app_name="$(compute_web_app_name "$NAME_PREFIX" "$SUBSCRIPTION_ID" "$RESOURCE_GROUP")"
+
+  local settings=(
+    "CENTINELA_ENTRA_ISSUER_URI=https://login.microsoftonline.com/${tenant_id}/v2.0"
+    # appId pelado, NO 'api://<appId>': con tokens v2 (ensure_v2_tokens) el claim
+    # 'aud' viene sin el prefijo, y validar contra la forma con prefijo rechaza
+    # todo token con un 401 que no explica el motivo.
+    "CENTINELA_ENTRA_AUDIENCE=${app_id}"
+    "CENTINELA_ENTRA_JWK_SET_URI=https://login.microsoftonline.com/${tenant_id}/discovery/v2.0/keys"
+  )
+
+  # Topologia de contenedores (ADR-009): sin Web App estos valores no tienen
+  # donde escribirse como app settings; viajan como variables de entorno de la
+  # Container App en su despliegue. Se imprimen para que el operador no tenga
+  # que reconstruirlos (el issuer con /v2.0 y el audience con api:// son los dos
+  # detalles que siempre se escriben mal de memoria).
+  if ! az webapp show --name "$app_name" --resource-group "$RESOURCE_GROUP" >/dev/null 2>&1; then
+    log_warn "Web App '$app_name' no existe; valores para las Container Apps:"
+    local s; for s in "${settings[@]}"; do log_warn "  $s"; done
+    return 0
+  fi
+
+  log_info "Configurando Resource Server OAuth2 en produccion y staging..."
+  az webapp config appsettings set \
+    --name "$app_name" \
+    --resource-group "$RESOURCE_GROUP" \
+    --settings "${settings[@]}" \
+    --only-show-errors >/dev/null
+  az webapp config appsettings set \
+    --name "$app_name" \
+    --resource-group "$RESOURCE_GROUP" \
+    --slot staging \
+    --settings "${settings[@]}" \
+    --only-show-errors >/dev/null
+
+  local slot slot_args actual_issuer actual_audience actual_jwk
+  for slot in production staging; do
+    slot_args=()
+    [ "$slot" = "staging" ] && slot_args=(--slot staging)
+    actual_issuer="$(az webapp config appsettings list --name "$app_name" --resource-group "$RESOURCE_GROUP" "${slot_args[@]}" --query "[?name=='CENTINELA_ENTRA_ISSUER_URI'].value | [0]" -o tsv)"
+    actual_audience="$(az webapp config appsettings list --name "$app_name" --resource-group "$RESOURCE_GROUP" "${slot_args[@]}" --query "[?name=='CENTINELA_ENTRA_AUDIENCE'].value | [0]" -o tsv)"
+    actual_jwk="$(az webapp config appsettings list --name "$app_name" --resource-group "$RESOURCE_GROUP" "${slot_args[@]}" --query "[?name=='CENTINELA_ENTRA_JWK_SET_URI'].value | [0]" -o tsv)"
+    [ "$actual_issuer" = "https://login.microsoftonline.com/${tenant_id}/v2.0" ] \
+      || die "Issuer de $slot no quedo configurado."
+    [ "$actual_audience" = "api://${app_id}" ] \
+      || die "Audience de $slot no quedo configurado."
+    [ "$actual_jwk" = "https://login.microsoftonline.com/${tenant_id}/discovery/v2.0/keys" ] \
+      || die "JWK URI de $slot no quedo configurado."
+  done
+}
+
 # --- Side effects (Entra ID) ---------------------------------------------------
 
 ensure_app_registration() {
@@ -93,7 +153,26 @@ ensure_app_registration() {
     log_info "App Registration '$display_name' ya existe (appId $(mask "$app_id")). Actualizando app roles..."
     with_retry 3 az ad app update --id "$app_id" --app-roles @"$roles_file" >/dev/null
   fi
+
+  ensure_v2_tokens "$app_id"
   printf '%s' "$app_id"
+}
+
+# Fija requestedAccessTokenVersion=2. Descubierto en despliegue real, no en
+# teoria: sin esto Entra emite tokens v1 cuyo issuer es sts.windows.net, mientras
+# la API valida login.microsoftonline.com/<tenant>/v2.0 — todo token es rechazado
+# con 401 y el mensaje no menciona versiones de token por ninguna parte.
+#
+# CONSECUENCIA QUE NO ES OBVIA: en tokens v2 el claim 'aud' es el appId PELADO,
+# no 'api://<appId>'. La audiencia que la API debe validar cambia con esta
+# decision. Quien configure CENTINELA_ENTRA_AUDIENCE debe usar el appId a secas.
+ensure_v2_tokens() {
+  local app_id="$1" object_id
+  object_id="$(az ad app show --id "$app_id" --query id -o tsv)"
+  with_retry 3 az rest --method patch \
+    --url "https://graph.microsoft.com/v1.0/applications/${object_id}" \
+    --body '{"api":{"requestedAccessTokenVersion":2}}' --output none
+  log_info "Tokens de acceso v2 configurados (aud = appId pelado)."
 }
 
 ensure_identifier_uri() {
@@ -148,27 +227,36 @@ main() {
   log_info "App Registration objetivo: $display_name"
 
   local tmp_dir roles_file
-  tmp_dir="$(mktemp -d)"; trap 'rm -rf "$tmp_dir"' EXIT
+  tmp_dir="$(mktemp -d)"; trap "rm -rf '$tmp_dir'" EXIT
   roles_file="$tmp_dir/app-roles.json"
   render_app_roles_json > "$roles_file"
 
-  local app_id sp_id
+  local app_id sp_id tenant_id
   app_id="$(ensure_app_registration "$display_name" "$roles_file")"
   [ -n "$app_id" ] || die "No se pudo obtener el appId."
   ensure_identifier_uri "$app_id"
   sp_id="$(ensure_service_principal "$app_id")"
 
   verify_app_roles "$app_id"
+  tenant_id="$(az account show --query tenantId -o tsv)"
+  configure_resource_server_settings "$app_id" "$tenant_id"
 
   # Registro sanitizado (sin secretos) para trazabilidad de RBAC posterior.
   local record="$SCRIPT_DIR/../docs/evidence/identity/entra-app.record.txt"
   if [ -d "$(dirname "$record")" ]; then
+    # Los identificadores van ENMASCARADOS. No son secretos, pero la regla de la
+    # celula (desde el hallazgo de ISS-S1-003, reincidente en Semana 3) es que
+    # ningun GUID real se versiona: facilitan el reconocimiento del tenant y el
+    # barrido scan-repository.sh los bloquea. La evidencia solo necesita poder
+    # correlacionar, y '86c7…fd35' correlaciona igual que el valor completo.
     {
       printf 'appDisplayName=%s\n' "$display_name"
-      printf 'appId=%s\n' "$app_id"
-      printf 'servicePrincipalObjectId=%s\n' "$sp_id"
+      printf 'appId=%s\n' "$(mask "$app_id")"
+      printf 'servicePrincipalObjectId=%s\n' "$(mask "$sp_id")"
       printf 'appRoles=%s\n' "${APP_ROLES[*]}"
-      printf 'note=sin secreto de cliente; autorizacion HTTP en ISS-S1-011\n'
+      printf 'issuerUri=https://login.microsoftonline.com/%s/v2.0\n' "$(mask "$tenant_id")"
+      printf 'audience=api://%s\n' "$(mask "$app_id")"
+      printf 'note=sin secreto de cliente; identificadores enmascarados por politica de evidencias\n'
     } > "$record"
     log_info "Registro sanitizado escrito: docs/evidence/identity/entra-app.record.txt"
   fi

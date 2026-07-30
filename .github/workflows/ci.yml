@@ -1,0 +1,118 @@
+# =============================================================================
+# Integracion continua — se ejecuta en cada pull request y en cada push.
+#
+# Su unico trabajo es decir si el codigo es apto para desplegarse. No despliega
+# nada ni toca Azure, asi que no necesita —ni recibe— ninguna credencial: un
+# fork malicioso que abra un pull request no obtiene acceso a nada.
+#
+# El despliegue vive en cd.yml y solo se dispara en la rama principal.
+# =============================================================================
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches-ignore: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Un push nuevo sobre la misma rama cancela la corrida anterior: nadie espera
+  # el resultado de un commit que ya quedo obsoleto.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pruebas:
+    name: Construccion y pruebas
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      # Las dos etapas exigidas por el enunciado: construir y probar. Un fallo
+      # aqui detiene el flujo antes de que exista ninguna imagen.
+      - name: Construir y probar la aplicacion
+        run: mvn -B -ntp verify
+
+      - name: Construir y probar el motor de scoring
+        run: mvn -B -ntp -f scoring-function/pom.xml verify
+
+      - name: Publicar informes de prueba
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: informes-de-prueba
+          path: |
+            target/surefire-reports/
+            target/failsafe-reports/
+            scoring-function/target/surefire-reports/
+          retention-days: 7
+
+  seguridad:
+    name: Ausencia de credenciales
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v4
+        with:
+          # El historial completo permite detectar un secreto que se introdujo y
+          # se "borro" en un commit posterior: sigue estando en el objeto de Git.
+          fetch-depth: 0
+
+      - name: Barrido de secretos en el repositorio
+        run: bash scripts/tests/scan-repository.sh
+
+      - name: Auditoria del historial de Git
+        run: bash scripts/tests/audit-git-secrets.sh
+
+      - name: Verificar que .env no esta versionado
+        run: |
+          if git ls-files --error-unmatch .env >/dev/null 2>&1; then
+            echo "::error::.env esta versionado. Contiene credenciales reales."
+            exit 1
+          fi
+          echo "OK: .env no esta bajo control de versiones."
+
+  analisis-estatico:
+    name: Convenciones y scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v4
+
+      - name: Instalar shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+
+      - name: Bloquear ante ERRORES de shell (compuerta de merge)
+        # Un error de shell en un script de aprovisionamiento no se descubre hasta
+        # que se ejecuta contra la suscripcion real y deja recursos a medio crear.
+        #
+        # La compuerta es a nivel 'error', no 'warning'. Es una decision, no una
+        # rebaja: los errores (SC1072, comillas rotas, expansiones que fallan) son
+        # bugs que rompen la ejecucion y DEBEN bloquear. Los warnings de este repo
+        # son mayoritariamente estilo o falsos positivos —SC2034 sobre variables
+        # que SI se usan a traves de 'source' en lib/common.sh—; convertirlos en
+        # compuerta bloquearia el merge por ruido en scripts heredados que
+        # funcionan. Se muestran aparte (paso siguiente) para no perderlos de vista.
+        run: shellcheck -S error scripts/*.sh scripts/lib/*.sh scripts/tests/*.sh scripts/verify/*.sh scripts/local/*.sh
+
+      - name: Reportar warnings de estilo (informativo, no bloquea)
+        continue-on-error: true
+        run: shellcheck -S warning scripts/*.sh scripts/lib/*.sh scripts/tests/*.sh scripts/verify/*.sh scripts/local/*.sh

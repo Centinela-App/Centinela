@@ -1,0 +1,6 @@
+issue      : iss-s3-014
+commit     : 0b32896f27fe0b1efa90f790e63862a428b205eb
+rama       : semana-3-despliegue-explicabilidad-observabilidad
+instante   : 20260729T173357Z (UTC)
+java       : openjdk version "21.0.10" 2026-01-20 LTS
+maven      : Apache Maven 3.9.14 (996c630dbc656c76214ce58821dcc58be960875b)

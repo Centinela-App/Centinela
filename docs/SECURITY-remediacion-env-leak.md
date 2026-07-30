@@ -94,3 +94,60 @@ git push origin --force --tags
       subscription/tenant/objectId (segunda pasada), no solo cadenas de conexión.
 - [ ] Instalar un **pre-commit hook** que corra `scan-repository.sh` antes de cada commit.
 - [ ] Activar `gitleaks` como gate obligatorio en CI (capa 4 del diseño).
+
+---
+
+# Enmascarado de identificadores de Entra ID en evidencias (Semana 3)
+
+## Qué se encontró
+
+El barrido `scripts/tests/scan-repository.sh` detectó GUIDs reales sin enmascarar en
+`docs/evidence/identity/entra-app.record.txt`, versionado desde Semana 1:
+
+- `appId` de la aplicación registrada
+- `servicePrincipalObjectId`
+- `tenantId`, dentro de `issuerUri`
+
+El hallazgo apareció al ejecutar la captura de evidencias de Semana 3. No se había detectado
+antes porque la primera pasada del barrido fallaba por otro motivo y salía sin llegar a la
+segunda pasada, que es la que verifica GUIDs.
+
+## Qué se decidió
+
+Enmascarado parcial, conservando los cuatro primeros y los cuatro últimos caracteres:
+`86c7…fd35`. Mantiene la evidencia correlacionable —dos apariciones del mismo identificador
+siguen viéndose iguales— sin exponer el valor completo.
+
+## Qué NO resuelve esto
+
+**El historial de Git conserva los valores originales.** Enmascarar el archivo limpia el árbol
+de trabajo y hace pasar la compuerta de CI, pero cualquiera con acceso al repositorio puede
+recuperar los GUIDs de un commit anterior.
+
+Se decidió no reescribir el historial. La razón es de coste operativo: `git filter-repo`
+obligaría a toda la célula a reclonar y dejaría inservible cualquier pull request abierto, a
+una semana del cierre del proyecto.
+
+## Por qué es una deuda aceptable, y en qué caso no lo sería
+
+Estos tres valores **no son credenciales**. El propio archivo lo declara: *«sin secreto de
+cliente»*. Un `tenantId` y un `appId` son identificadores públicos por diseño; se envían en cada
+petición de autenticación y son descubribles por cualquiera que interactúe con la aplicación.
+Sin una credencial —secreto de cliente, certificado o token— no permiten obtener acceso a nada.
+
+Lo que sí facilitan es el **reconocimiento**: saber qué tenant y qué aplicación existen acorta
+el trabajo de quien prepara un ataque de phishing dirigido o de fuerza bruta sobre cuentas de
+ese tenant. Esa es la razón por la que la célula estableció la regla de enmascararlos en Semana 1,
+y por la que se mantiene.
+
+**La decisión sería la contraria** si en el historial hubiera aparecido un secreto de cliente,
+un certificado o una cadena de conexión. Ahí el enmascarado del árbol de trabajo sería
+insuficiente por completo: habría que rotar la credencial de inmediato —lo que la invalida
+independientemente de quién la tenga— y solo después decidir sobre el historial. La diferencia
+está en que un identificador filtrado no se puede «rotar», pero tampoco abre ninguna puerta.
+
+## Prevención
+
+El barrido corre ahora como compuerta en `ci.yml`, en el trabajo `seguridad`, sobre el árbol de
+trabajo y sobre el historial completo. Un GUID real nuevo detiene la integración antes de que
+llegue a la rama principal.

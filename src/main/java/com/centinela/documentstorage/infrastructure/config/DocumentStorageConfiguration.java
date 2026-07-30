@@ -10,6 +10,7 @@ import com.centinela.documentstorage.infrastructure.azure.blob.AzureVerification
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 
 import java.time.Clock;
 
@@ -20,16 +21,34 @@ import java.time.Clock;
 public class DocumentStorageConfiguration {
 
     @Bean
+    @Profile("!test")
     VerificationDocumentStoragePort verificationDocumentStoragePort(
             @Value("${centinela.storage.documents.account-name}") String accountName,
-            @Value("${centinela.storage.documents.container-name}") String containerName) {
-        BlobContainerClient containerClient = new BlobServiceClientBuilder()
-                .endpoint("https://" + accountName + ".blob.core.windows.net")
-                .credential(new DefaultAzureCredentialBuilder().build())
-                .buildClient()
-                .getBlobContainerClient(containerName);
+            @Value("${centinela.storage.documents.container-name}") String containerName,
+            @Value("${centinela.storage.documents.connection-string:}") String connectionString) {
+        // Misma bifurcacion que el Blob de transacciones: Azurite por cadena de
+        // conexion en local, Managed Identity en Azure. Ver la nota de seguridad en
+        // RawTransactionBlobProperties.
+        BlobServiceClientBuilder builder = new BlobServiceClientBuilder();
+        if (connectionString != null && !connectionString.isBlank()) {
+            builder.connectionString(connectionString);
+        } else {
+            builder.endpoint("https://" + accountName + ".blob.core.windows.net")
+                    .credential(new DefaultAzureCredentialBuilder().build());
+        }
+        return new AzureVerificationDocumentBlobAdapter(
+                builder.buildClient().getBlobContainerClient(containerName));
+    }
 
-        return new AzureVerificationDocumentBlobAdapter(containerClient);
+    /**
+     * Adaptador no-op para pruebas de contexto. Evita inicializar el SDK de
+     * Azure cuando las pruebas cargan toda la aplicacion sin usar documentos.
+     * Las pruebas del endpoint reemplazan este bean con {@code @MockBean}.
+     */
+    @Bean
+    @Profile("test")
+    VerificationDocumentStoragePort noOpVerificationDocumentStoragePort() {
+        return (document, receivedAt) -> "test/" + document.documentId() + "/" + document.storedFilename();
     }
 
     @Bean

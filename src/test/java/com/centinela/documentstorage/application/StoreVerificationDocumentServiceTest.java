@@ -37,7 +37,7 @@ class StoreVerificationDocumentServiceTest {
 
         String documentId = service.store(new StoreVerificationDocumentCommand(
                 "../Reporte técnico 2026.pdf",
-                content));
+                content)).documentId();
 
         ArgumentCaptor<VerificationDocument> documentCaptor =
                 ArgumentCaptor.forClass(VerificationDocument.class);

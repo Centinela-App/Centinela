@@ -1,0 +1,25 @@
+# Ninguna etapa declarada queda sin emisor
+# comando: bash scripts/verify/verify-practices.sh
+# ------------------------------------------------------------------
+[verify-practices] Verificando los limites de la arquitectura (ArchUnit)...
+[verify-practices]   OK — el dominio no depende de aplicacion ni de infraestructura
+[verify-practices] Ejecutando la suite de pruebas de los dos modulos...
+[verify-practices]   OK — modulo principal en verde
+[verify-practices]   OK — motor de scoring en verde
+[verify-practices] Verificando que toda etapa declarada se emite en algun punto...
+[verify-practices]   OK — etapa INGEST_API instrumentada
+[verify-practices]   OK — etapa RAW_PERSIST instrumentada
+[verify-practices]   OK — etapa EVENT_PUBLISH instrumentada
+[verify-practices]   OK — etapa SCORING instrumentada
+[verify-practices]   OK — etapa CASE_OPEN instrumentada
+[verify-practices]   OK — etapa EXPLANATION instrumentada
+[verify-practices]   OK — etapa DOCUMENT_EXTRACTION instrumentada
+[verify-practices] Verificando la numeracion de las migraciones...
+[verify-practices]   OK — 4 migraciones consecutivas
+[verify-practices] Barrido de credenciales en el repositorio...
+[verify-practices]   OK — sin credenciales en el arbol de trabajo
+[verify-practices] shellcheck no disponible; se omite.
+
+[verify-practices] RESULTADO: OK
+
+# RESULTADO: OK

@@ -1,0 +1,14 @@
+# Application Insights, tope diario de ingesta y retencion
+# comando: bash scripts/verify/verify-observability-setup.sh
+# ------------------------------------------------------------------
+[INFO]  Cargando parametros desde /c/Users/carlo/Desktop/Repositories/Centinela/scripts/lib/../../.env
+[verify-observability]   OK — Application Insights 'appi-cent' existe (tipo: web)
+[verify-observability]   OK — respaldado por Log Analytics (modo workspace)
+[verify-observability]   OK — tope diario de ingesta: 1.0 GB
+[verify-observability]   OK — retencion: 30 dias (dentro del nivel sin costo adicional)
+[verify-observability]   OK — cadena de conexion disponible (no se imprime a proposito)
+[verify-observability]   sin telemetria ingerida todavia — la traza individual (ISS-S3-017) no se puede demostrar hasta que el pipeline genere trafico
+
+[verify-observability] RESULTADO: OK
+
+# RESULTADO: OK

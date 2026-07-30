@@ -213,16 +213,19 @@ deploy_storage_via_arm() {
 verify_all_resources() {
   local sa_name="$1" rg="$2"
 
+  # Los recursos hijo pueden tardar unos segundos en ser consultables aunque el
+  # deployment ARM ya haya reportado exito: se reintenta antes de darlos por
+  # ausentes (ver retry_until en lib/common.sh).
   log_info "Verificando contenedores mediante control plane..."
   local c
   for c in "${CONTAINERS[@]}"; do
-    az resource show \
+    retry_until 5 az resource show \
       --resource-group "$rg" \
       --namespace "Microsoft.Storage" \
       --parent "storageAccounts/${sa_name}/blobServices/default" \
       --resource-type "containers" \
       --name "$c" \
-      >/dev/null 2>&1 || die "Falta contenedor: $c"
+      || die "Falta contenedor: $c"
 
     log_info "  OK contenedor: $c"
   done
@@ -230,13 +233,13 @@ verify_all_resources() {
   log_info "Verificando colas mediante control plane..."
   local q
   for q in "${QUEUES[@]}"; do
-    az resource show \
+    retry_until 5 az resource show \
       --resource-group "$rg" \
       --namespace "Microsoft.Storage" \
       --parent "storageAccounts/${sa_name}/queueServices/default" \
       --resource-type "queues" \
       --name "$q" \
-      >/dev/null 2>&1 || die "Falta cola: $q"
+      || die "Falta cola: $q"
 
     log_info "  OK cola: $q"
   done

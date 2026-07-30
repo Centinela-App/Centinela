@@ -43,7 +43,7 @@ pend() { RESULTS+=("PEND  $*"); PEND=$((PEND + 1)); log_warn "$*"; }
 print_report() {
   printf '\n============== ISS-S1-006 / TEST-S1-009 ==============\n'
   for r in "${RESULTS[@]}"; do printf '%s\n' "$r"; done
-  printf '------------------------------------------------------\n'
+  printf '%s\n' '------------------------------------------------------'
   printf 'Resumen: %d PASS / %d FAIL / %d PENDIENTE\n' "$PASS" "$FAIL" "$PEND"
   printf '======================================================\n'
 }

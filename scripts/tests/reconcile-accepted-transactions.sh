@@ -24,6 +24,7 @@ LOAD_LOG_FILE=""
 OUTPUT_FILE=""
 STORAGE_ACCOUNT=""
 CONTAINER_NAME=""
+TMP_DIR=""
 
 # -----------------------------------------------------------------------------
 # Funciones
@@ -154,29 +155,29 @@ main() {
   az account show >/dev/null 2>&1 || die "No hay sesion Azure activa. Ejecuta az login."
   
   # Crear directorio temporal
-  local tmp_dir
-  tmp_dir="$(mktemp -d)"
+  TMP_DIR="$(mktemp -d)"
   
   # Cleanup
   cleanup_reconcile() {
-    rm -rf "$tmp_dir" 2>/dev/null || true
+    rm -rf "$TMP_DIR" 2>/dev/null || true
   }
   trap cleanup_reconcile EXIT
   
   # Archivos temporales
-  local accepted_file="${tmp_dir}/accepted.csv"
-  local reconciled_file="${tmp_dir}/reconciled.csv"
-  local failed_reconcile_file="${tmp_dir}/failed-reconcile.csv"
+  local accepted_file="${TMP_DIR}/accepted.csv"
+  local reconciled_file="${TMP_DIR}/reconciled.csv"
+  local failed_reconcile_file="${TMP_DIR}/failed-reconcile.csv"
   
   # Headers para archivos de salida
-  echo "transactionId,httpStatus,timestamp,blobName,blobVerified,error" > "$accepted_file"
-  echo "transactionId,httpStatus,timestamp,blobName,verified,error" > "$reconciled_file"
-  echo "transactionId,httpStatus,timestamp,blobName,verified,error" > "$failed_reconcile_file"
+  echo "transactionId,httpStatus,startTime,endTime,blobName,blobVerified,error" > "$accepted_file"
+  echo "transactionId,httpStatus,startTime,endTime,blobName,verified,error" > "$reconciled_file"
+  echo "transactionId,httpStatus,startTime,endTime,blobName,verified,error" > "$failed_reconcile_file"
   
   # Contadores
   local total_requests=0
   local accepted_requests=0
   local failed_requests=0
+  local other_responses=0
   local reconciled_requests=0
   local unreconciled_requests=0
   
@@ -185,7 +186,7 @@ main() {
   
   # Saltar header y procesar cada linea
   local line_number=0
-  while IFS=',' read -r transaction_id http_status timestamp has_response error_msg; do
+  while IFS=',' read -r transaction_id http_status start_time end_time has_response error_msg; do
     line_number=$((line_number + 1))
     
     # Saltar header
@@ -205,12 +206,11 @@ main() {
       # Verificar que existe el blob
       local blob_name=""
       local verified="false"
-      local error_msg_clean="${error_msg//;/,}"
       local verify_error=""
       
       if blob_name="$(check_blob_exists "$transaction_id" "$CONTAINER_NAME" "$STORAGE_ACCOUNT")"; then
         # Blob existe, verificar contenido
-        local blob_file="${tmp_dir}/blob-${transaction_id}.json"
+        local blob_file="${TMP_DIR}/blob-${transaction_id}.json"
         if get_blob_content "$blob_name" "$CONTAINER_NAME" "$STORAGE_ACCOUNT" "$blob_file"; then
           if verify_blob_content "$blob_file" "$transaction_id"; then
             verified="true"
@@ -229,36 +229,41 @@ main() {
       fi
       
       # Registrar resultado
-      printf '%s,%s,%s,%s,%s,%s\n' \
+      printf '%s,%s,%s,%s,%s,%s,%s\n' \
         "$transaction_id" \
         "$http_status" \
-        "$timestamp" \
+        "$start_time" \
+        "$end_time" \
         "$blob_name" \
         "$verified" \
         "$verify_error" \
         >> "$accepted_file"
       
       if [ "$verified" = "true" ]; then
-        printf '%s,%s,%s,%s,true,\n' \
+        printf '%s,%s,%s,%s,%s,true,\n' \
           "$transaction_id" \
           "$http_status" \
-          "$timestamp" \
+          "$start_time" \
+          "$end_time" \
           "$blob_name" \
           >> "$reconciled_file"
       else
-        printf '%s,%s,%s,%s,false,%s\n' \
+        printf '%s,%s,%s,%s,%s,false,%s\n' \
           "$transaction_id" \
           "$http_status" \
-          "$timestamp" \
+          "$start_time" \
+          "$end_time" \
           "$blob_name" \
           "$verify_error" \
           >> "$failed_reconcile_file"
       fi
       
     else
-      # Solicitud fallida o otro codigo
-      if [ "$http_status" = "000" ] || [ -n "$error_msg" ]; then
+      # Error de transporte o 5xx = interrupcion. Otros HTTP prueban que la API respondio.
+      if [ "$http_status" = "000" ] || [[ "$http_status" =~ ^5[0-9][0-9]$ ]]; then
         failed_requests=$((failed_requests + 1))
+      else
+        other_responses=$((other_responses + 1))
       fi
     fi
     
@@ -275,7 +280,8 @@ main() {
   log_info "========================================"
   log_info "Solicitudes totales:    $total_requests"
   log_info "Solicitudes aceptadas:  $accepted_requests"
-  log_info "Solicitudes fallidas:   $failed_requests"
+  log_info "Errores transporte/5xx: $failed_requests"
+  log_info "Otros codigos HTTP:     $other_responses"
   log_info "Transacciones halladas: $reconciled_requests"
   log_info "Transacciones perdidas: $unreconciled_requests"
   log_info "========================================"
@@ -300,13 +306,14 @@ main() {
     "totalRequests": $total_requests,
     "acceptedRequests": $accepted_requests,
     "failedRequests": $failed_requests,
+    "otherHttpResponses": $other_responses,
     "reconciledRequests": $reconciled_requests,
     "unreconciledRequests": $unreconciled_requests
   },
   "files": {
-    "acceptedTransactions": "$accepted_file",
-    "reconciledTransactions": "$reconciled_file",
-    "failedReconciliation": "$failed_reconcile_file"
+    "acceptedTransactions": "accepted-transactions.csv",
+    "reconciledTransactions": "reconciled-transactions.csv",
+    "failedReconciliation": "failed-reconciliation.csv"
   },
   "result": {
     "passed": $test_passed,

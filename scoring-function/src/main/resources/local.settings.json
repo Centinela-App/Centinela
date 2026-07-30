@@ -1,0 +1,14 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "java",
+    "COSMOS_ENDPOINT": "https://localhost:8081",
+    "COSMOS_DATABASE": "centinela",
+    "COSMOS_COLLECTION": "transactions",
+    "STORAGE_QUEUE_CONNECTION_STRING": "UseDevelopmentStorage=true",
+    "FLAGGED_CASES_QUEUE": "flagged-cases",
+    "SCORING_THRESHOLD": "50",
+    "EVENT_GRID_TOPIC": "transaction-events"
+  }
+}
