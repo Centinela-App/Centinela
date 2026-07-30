@@ -147,6 +147,24 @@ resolve_runtime_configuration() {
   PG_JDBC_URL="jdbc:postgresql://${PG_HOST}:5432/centinela?sslmode=require&authenticationPluginClassName=com.azure.identity.extensions.jdbc.postgresql.AzurePostgresqlAuthenticationPlugin"
 }
 
+# Asigna un rol SOLO si falta. La comprobacion es una lectura, que el service
+# principal del pipeline si puede hacer; escribir una asignacion — aunque sea
+# identica a la existente — exige Microsoft.Authorization/roleAssignments/write,
+# que Contributor no incluye, y el CD moria con AuthorizationFailed sin que
+# hubiera nada que cambiar (observado en pipeline real). En la corrida
+# interactiva inicial la asignacion no existe y se crea con normalidad.
+ensure_role_assignment() {
+  local role="$1" principal="$2" scope="$3"
+  local existentes
+  existentes="$(az role assignment list --assignee "$principal" --role "$role" \
+    --scope "$scope" --query 'length(@)' -o tsv 2>/dev/null || echo 0)"
+  if [ "${existentes:-0}" -ge 1 ]; then
+    log_info "  '$role' ya asignado."
+    return 0
+  fi
+  with_retry 5 assign_role "$role" "$principal" "$scope"
+}
+
 # --- API de ingesta y consulta ----------------------------------------------
 deploy_api() {
   local environment="$1" registry="$2" identity="$3"
@@ -244,9 +262,9 @@ deploy_scoring() {
   apps_principal="$(az identity show -n "id-${NAME_PREFIX}-apps" -g "$RESOURCE_GROUP" --query principalId -o tsv)"
 
   log_info "Permisos de host de Functions para la identidad de datos..."
-  with_retry 5 assign_role "Storage Blob Data Owner" "$apps_principal" "$storage_id" \
+  ensure_role_assignment "Storage Blob Data Owner" "$apps_principal" "$storage_id" \
     || die "El host de Functions no puede operar sin Blob Data Owner sobre su Storage."
-  with_retry 5 assign_role "Key Vault Secrets Officer" "$apps_principal" "$vault_id" \
+  ensure_role_assignment "Key Vault Secrets Officer" "$apps_principal" "$vault_id" \
     || die "El host no puede persistir sus system keys sin Secrets Officer en el vault."
 
   # Mismo patron que deploy_api: un solo juego de variables para create y
