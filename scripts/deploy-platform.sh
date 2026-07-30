@@ -368,17 +368,26 @@ imagenes() {
   # `az acr build` sube el contexto, construye en Azure y deja la imagen en el
   # registro. Se etiqueta tambien 'latest' porque deploy-containers.sh usa esa
   # etiqueta cuando se invoca sin --tag.
-  run_step "construir-api-en-azure" az acr build \
-    --registry "$REGISTRY_NAME" \
-    --image "centinela-api:${IMAGE_TAG}" \
-    --image "centinela-api:latest" \
-    --file Dockerfile "$REPO_ROOT"
+  #
+  # OJO: la CLI resuelve --file contra el DIRECTORIO ACTUAL, no contra el
+  # contexto. Con '--file Dockerfile "$REPO_ROOT/scoring-function"' ejecutado
+  # desde la raiz, el motor se construia con el Dockerfile de la API (fallo
+  # real: el plugin de Functions no veia host.json e intentaba instalar
+  # extensiones con unas Core Tools inexistentes). Cada build se ejecuta con
+  # cwd = su contexto para que no haya nada que resolver mal.
+  run_step "construir-api-en-azure" \
+    bash -c "cd '$REPO_ROOT' && az acr build \
+      --registry '$REGISTRY_NAME' \
+      --image 'centinela-api:${IMAGE_TAG}' \
+      --image 'centinela-api:latest' \
+      --file Dockerfile ."
 
-  run_step "construir-scoring-en-azure" az acr build \
-    --registry "$REGISTRY_NAME" \
-    --image "centinela-scoring:${IMAGE_TAG}" \
-    --image "centinela-scoring:latest" \
-    --file Dockerfile "$REPO_ROOT/scoring-function"
+  run_step "construir-scoring-en-azure" \
+    bash -c "cd '$REPO_ROOT/scoring-function' && az acr build \
+      --registry '$REGISTRY_NAME' \
+      --image 'centinela-scoring:${IMAGE_TAG}' \
+      --image 'centinela-scoring:latest' \
+      --file Dockerfile ."
 }
 
 aplicaciones() {
