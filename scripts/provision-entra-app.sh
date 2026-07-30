@@ -44,10 +44,35 @@ approle_guid() {
   printf '%s-%s-5%s-%s%s-%s' "${h:0:8}" "${h:8:4}" "${h:13:3}" "9" "${h:18:3}" "${h:20:12}"
 }
 
+# ALLOWEDMEMBERTYPES: QUIEN PUEDE SOSTENER CADA ROL
+# -------------------------------------------------
+# No confundir con QUE permite cada rol. La matriz de permisos
+# (docs/3_Seguridad/2_Matriz_Roles_Permisos.md) no cambia: SERVICE sigue pudiendo
+# SOLO enviar transacciones y sigue recibiendo 403 en la carga de documentos.
+# Aqui se decide unicamente si un rol puede concederse a una identidad de
+# aplicacion o solo a una persona.
+#
+# ANALYST admite ademas "Application" por un motivo concreto: el banco de pruebas
+# ejercita el escenario de documento ilegible, que es una accion de analista, y una
+# Managed Identity no puede sostener un rol de tipo solo-User. Con la version
+# anterior ese escenario devolvia 403 sin remedio posible — no habia forma de
+# concederle el rol— y uno de los seis escenarios del banco de pruebas no podia
+# funcionar nunca.
+#
+# La alternativa era dejar que SERVICE cargara documentos. Se descarto: contradice
+# una decision de seguridad explicita y documentada, y ampliaria los permisos del
+# rol que corre desatendido, que es justo el que menos debe tener. Relajar QUIEN
+# puede sostener ANALYST conserva la frontera; ampliar lo que puede SERVICE la
+# borraria.
+#
+# ADMINISTRATOR y AUDITOR siguen siendo solo de personas: ninguna automatizacion
+# del sistema necesita administrar ni auditar, y un rol concedible a una aplicacion
+# sin que nada lo necesite es superficie de ataque a cambio de nada.
 role_member_types() {
   case "$1" in
-    SERVICE) printf '"Application"' ;;   # identidad de servicio, corre desatendido
-    *)       printf '"User"' ;;          # ANALYST / ADMINISTRATOR / AUDITOR
+    SERVICE) printf '"Application"' ;;              # identidad de servicio, corre desatendido
+    ANALYST) printf '"User","Application"' ;;       # personas y clientes automatizados del lado analista
+    *)       printf '"User"' ;;                     # ADMINISTRATOR / AUDITOR: solo personas
   esac
 }
 
@@ -130,8 +155,14 @@ configure_resource_server_settings() {
     actual_jwk="$(az webapp config appsettings list --name "$app_name" --resource-group "$RESOURCE_GROUP" "${slot_args[@]}" --query "[?name=='CENTINELA_ENTRA_JWK_SET_URI'].value | [0]" -o tsv)"
     [ "$actual_issuer" = "https://login.microsoftonline.com/${tenant_id}/v2.0" ] \
       || die "Issuer de $slot no quedo configurado."
-    [ "$actual_audience" = "api://${app_id}" ] \
-      || die "Audience de $slot no quedo configurado."
+    # Se compara contra el appId PELADO, que es lo que el bloque 'settings' de
+    # arriba escribe. La version anterior comprobaba "api://${app_id}" y por tanto
+    # abortaba SIEMPRE que existiera una Web App, con el mensaje "Audience no
+    # quedo configurado" sobre un valor que si estaba escrito y era el correcto.
+    # Quedo latente porque la topologia de contenedores no crea Web App y la
+    # funcion retorna antes de llegar aqui.
+    [ "$actual_audience" = "${app_id}" ] \
+      || die "Audience de $slot quedo como '$actual_audience'; se esperaba el appId pelado."
     [ "$actual_jwk" = "https://login.microsoftonline.com/${tenant_id}/discovery/v2.0/keys" ] \
       || die "JWK URI de $slot no quedo configurado."
   done
