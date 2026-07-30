@@ -16,10 +16,30 @@
 # Uso:
 #   CENTINELA_GITHUB_REPO="Centinela-App/Centinela" bash scripts/provision-github-oidc.sh
 #
-# Al terminar imprime los tres valores que hay que configurar en GitHub. Ninguno
-# de los tres es un secreto — son identificadores — pero se registran como
-# secretos del repositorio por costumbre y para no exponer la topologia de la
-# suscripcion en los registros publicos de las corridas.
+#   # Los dos repositorios del sistema, en una sola corrida:
+#   CENTINELA_GITHUB_REPO="Centinela-App/Centinela,Centinela-App/centinela-lab" \
+#     bash scripts/provision-github-oidc.sh
+#
+# VARIOS REPOSITORIOS, UNA SOLA IDENTIDAD
+# ---------------------------------------
+# El banco de pruebas vive en su propio repositorio y tiene su propio pipeline, y
+# ese pipeline tambien necesita autenticarse. Una credencial federada esta acotada
+# a UN repositorio, asi que sin una credencial propia el workflow del banco de
+# pruebas falla en 'azure/login' con un error que habla de token invalido y no
+# menciona que el problema es el repositorio de origen.
+#
+# Se usa la MISMA aplicacion con una credencial por repositorio en lugar de dos
+# aplicaciones. El motivo es que ambos pipelines necesitan exactamente los mismos
+# dos permisos sobre el mismo grupo de recursos —publicar en el registro y
+# actualizar Container Apps—, asi que dos aplicaciones significarian mantener dos
+# juegos identicos de asignaciones de rol y descubrir por un despliegue roto
+# cuando uno de los dos se queda atras. El acotamiento real lo da la credencial
+# federada: cada repositorio solo puede pedir el token desde su propia rama.
+#
+# Al terminar imprime los valores que hay que configurar en GitHub. Ninguno es un
+# secreto — son identificadores — pero se registran como secretos del repositorio
+# por costumbre y para no exponer la topologia de la suscripcion en los registros
+# publicos de las corridas.
 
 set -euo pipefail
 
@@ -47,13 +67,30 @@ main() {
   require_cmd az
 
   [ -n "$GITHUB_REPO" ] || die "Define CENTINELA_GITHUB_REPO con la forma 'organizacion/repositorio'."
-  [[ "$GITHUB_REPO" == */* ]] || die "CENTINELA_GITHUB_REPO debe tener la forma 'organizacion/repositorio'."
+
+  # Se admite una lista separada por comas para cubrir los dos repositorios del
+  # sistema en una sola corrida. Cada entrada se valida por separado: un error
+  # tipografico en el segundo repositorio no debe descubrirse cuando su pipeline
+  # falle semanas despues.
+  local -a repos=()
+  local entrada
+  local IFS_ORIGINAL="$IFS"
+  IFS=','
+  for entrada in $GITHUB_REPO; do
+    entrada="$(printf '%s' "$entrada" | tr -d '[:space:]')"
+    [ -n "$entrada" ] || continue
+    [[ "$entrada" == */* ]] \
+      || die "'$entrada' no tiene la forma 'organizacion/repositorio'."
+    repos+=("$entrada")
+  done
+  IFS="$IFS_ORIGINAL"
+  [ "${#repos[@]}" -gt 0 ] || die "CENTINELA_GITHUB_REPO no contiene ningun repositorio valido."
 
   local app_name="app-${NAME_PREFIX}-github-deploy"
 
   log_info "Plan de ISS-S3-010:"
   log_info "  Aplicacion       : $app_name"
-  log_info "  Repositorio      : $GITHUB_REPO"
+  log_info "  Repositorios     : ${repos[*]}"
   log_info "  Rama autorizada  : $GITHUB_BRANCH"
   log_info "  Alcance del rol  : el grupo de recursos, NO la suscripcion"
 
@@ -67,9 +104,13 @@ main() {
   local app_id
   app_id="$(ensure_application "$app_name")"
   ensure_service_principal "$app_id"
-  ensure_federated_credentials "$app_id"
+  local repo
+  for repo in "${repos[@]}"; do
+    log_info "Credenciales federadas para '$repo':"
+    ensure_federated_credentials "$app_id" "$repo"
+  done
   assign_deployment_roles "$app_id"
-  print_github_configuration "$app_id"
+  print_github_configuration "$app_id" "${repos[@]}"
 }
 
 ensure_application() {
@@ -95,22 +136,29 @@ ensure_service_principal() {
 }
 
 ensure_federated_credentials() {
-  local app_id="$1"
+  local app_id="$1" repo="$2"
 
-  # Tres credenciales, cada una acotada a un contexto distinto. Acotar importa:
-  # una credencial que aceptara cualquier rama permitiria a quien pudiera crear
-  # una rama en el repositorio desplegar a produccion.
-  federated "$app_id" "github-branch-${GITHUB_BRANCH}" \
-    "repo:${GITHUB_REPO}:ref:refs/heads/${GITHUB_BRANCH}" \
-    "Integraciones a la rama ${GITHUB_BRANCH}"
+  # El nombre de cada credencial incluye el repositorio: son unicos dentro de la
+  # aplicacion, y con dos repositorios los nombres genericos colisionarian —la
+  # segunda credencial se veria como "ya existe" y el segundo pipeline fallaria
+  # con un token que Azure rechaza sin decir que el problema es el origen.
+  local slug
+  slug="$(printf '%s' "$repo" | tr '/' '-' | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')"
 
-  federated "$app_id" "github-environment-produccion" \
-    "repo:${GITHUB_REPO}:environment:produccion" \
-    "Despliegues al entorno de produccion"
+  # Tres credenciales por repositorio, cada una acotada a un contexto distinto.
+  # Acotar importa: una credencial que aceptara cualquier rama permitiria a quien
+  # pudiera crear una rama en el repositorio desplegar a produccion.
+  federated "$app_id" "gh-${slug}-branch-${GITHUB_BRANCH}" \
+    "repo:${repo}:ref:refs/heads/${GITHUB_BRANCH}" \
+    "Integraciones a la rama ${GITHUB_BRANCH} de ${repo}"
 
-  federated "$app_id" "github-pull-request" \
-    "repo:${GITHUB_REPO}:pull_request" \
-    "Validaciones de pull request (solo lectura en la practica)"
+  federated "$app_id" "gh-${slug}-environment-produccion" \
+    "repo:${repo}:environment:produccion" \
+    "Despliegues al entorno de produccion de ${repo}"
+
+  federated "$app_id" "gh-${slug}-pull-request" \
+    "repo:${repo}:pull_request" \
+    "Validaciones de pull request de ${repo} (solo lectura en la practica)"
 }
 
 federated() {
@@ -168,15 +216,30 @@ assign_deployment_roles() {
 }
 
 print_github_configuration() {
-  local app_id="$1"
-  local tenant_id
+  local app_id="$1"; shift
+  local -a repos=("$@")
+  local tenant_id entra_app_id api_fqdn
   tenant_id="$(az account show --query tenantId -o tsv)"
+
+  # Se resuelven aqui para que el operador no tenga que buscarlos: son las dos
+  # variables que el pipeline del banco de pruebas necesita para no depender de
+  # permisos de lectura sobre Microsoft Graph. Si todavia no existen, se imprime el
+  # comando que las obtiene mas adelante en vez de un hueco sin explicacion.
+  entra_app_id="$(az ad app list --display-name "${NAME_PREFIX}-api-week1" \
+    --query '[0].appId' -o tsv 2>/dev/null | grep -v '^None$' || true)"
+  api_fqdn="$(az containerapp show -g "$RESOURCE_GROUP" -n "ca-${NAME_PREFIX}-api" \
+    --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || true)"
 
   cat <<EOF
 
 ================================================================================
 CONFIGURACION A REGISTRAR EN GITHUB
 ================================================================================
+
+Repositorios habilitados por credencial federada:
+$(printf '  - %s\n' "${repos[@]}")
+
+--- En AMBOS repositorios ------------------------------------------------------
 
 Secrets (Settings -> Secrets and variables -> Actions -> Secrets):
 
@@ -189,14 +252,37 @@ Variables (misma pantalla, pestana Variables):
   AZURE_RESOURCE_GROUP   $RESOURCE_GROUP
   AZURE_LOCATION         $LOCATION
   NAME_PREFIX            $NAME_PREFIX
-  APP_SERVICE_SKU        $APP_SERVICE_SKU
 
+--- Solo en el repositorio de Centinela ---------------------------------------
+
+  APP_SERVICE_SKU        $APP_SERVICE_SKU
+  AZURE_DEPLOY_ENABLED   true        <- activa el despliegue automatico
+
+--- Solo en el repositorio del banco de pruebas -------------------------------
+
+  DESPLIEGUE_HABILITADO  true        <- activa el despliegue automatico
+  CENTINELA_ENTRA_APP_ID ${entra_app_id:-<ejecuta provision-entra-app.sh y vuelve a correr este script>}
+  CENTINELA_API_FQDN     ${api_fqdn:-<se resuelve solo tras desplegar la API; opcional>}
+
+Estas dos ultimas evitan que el pipeline del banco de pruebas necesite permiso de
+lectura sobre Microsoft Graph. Son identificadores publicos, no secretos.
+
+--- Nota sobre lo que NO se configura aqui ------------------------------------
+
+El app role SERVICE de la identidad del banco de pruebas NO se concede desde el
+pipeline: exige escritura en el directorio, y darsela al service principal de un
+workflow significaria que quien pueda editar ese workflow puede concederse roles
+de aplicacion. Lo hace una persona, una vez:
+
+  bash scripts/deploy-lab.sh --skip-image --yes      (en el repo centinela-lab)
+
+================================================================================
 Ninguno de estos valores es un secreto en sentido estricto: son identificadores
-y no sirven de nada sin un token firmado por GitHub para este repositorio y esta
+y no sirven de nada sin un token firmado por GitHub para ESE repositorio y ESA
 rama. Se registran como secrets por costumbre y para no publicar la topologia de
 la suscripcion en los registros de cada corrida.
 
-Con esto, 'az login' en el pipeline funciona sin contrasena alguna.
+Con esto, 'az login' en los dos pipelines funciona sin contrasena alguna.
 ================================================================================
 EOF
 }
